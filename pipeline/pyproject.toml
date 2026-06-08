@@ -1,0 +1,23 @@
+[project]
+name = "hdx-hapi-cloud-native"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx[http2]",
+    "pyarrow",
+    "tenacity>=9.1.4",
+]
+
+[project.scripts]
+hapi = "app.__main__:main"
+
+[tool.ruff]
+fix = true
+lint.select = ["ALL"]
+lint.ignore = ["COM812", "D203", "D213"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.16",
+]
