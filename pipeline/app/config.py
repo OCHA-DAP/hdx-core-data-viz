@@ -19,7 +19,9 @@ OUTPUT_DIR = "output"
 
 SOURCE_COOP_BUCKET = "us-west-2.opendata.source.coop"
 SOURCE_COOP_REGION = "us-west-2"
-# Set to "<org>/<product>" — e.g. "ocha-dap/hdx-hapi"
+# Set to "<org>/<product>" — e.g. "hdx/hapi"
 SOURCE_COOP_PREFIX: str = os.environ.get("SOURCE_COOP_PREFIX", "")
+_prefix = SOURCE_COOP_PREFIX.strip("/")
+SOURCE_COOP_BASE_URL: str = f"https://data.source.coop/{_prefix}/" if _prefix else ""
 
 UTILITY_TAGS = {"Generate App Identifier", "Util"}

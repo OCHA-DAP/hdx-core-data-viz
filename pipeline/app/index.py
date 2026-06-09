@@ -20,16 +20,21 @@ def build_catalog(endpoint_results: list[dict]) -> None:
     entries = []
     for r in endpoint_results:
         schema: pa.Schema = r["schema"]
+        rel_path = r["path"]
+        base = config.SOURCE_COOP_BASE_URL
+        href = f"{base}{rel_path}" if base else rel_path
         entries.append(
             {
                 "id": r["endpoint"]["id"],
                 "theme": r["endpoint"]["theme"],
-                "parquet_href": r["path"],
-                "row_count": r["row_count"],
+                "href": href,
+                "table:row_count": r["row_count"],
                 "start_datetime": r["start"],
                 "end_datetime": r["end"],
-                "columns": [{"name": f.name, "type": str(f.type)} for f in schema],
-                "updated_at": updated_at,
+                "table:columns": [
+                    {"name": f.name, "type": str(f.type)} for f in schema
+                ],
+                "updated": updated_at,
             }
         )
 
