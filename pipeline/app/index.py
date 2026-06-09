@@ -14,7 +14,7 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
-_STAC_VERSION = "1.0.0"
+_STAC_VERSION = "1.1.0"
 _TABLE_EXTENSION = "https://stac-extensions.github.io/table/v1.2.0/schema.json"
 
 
