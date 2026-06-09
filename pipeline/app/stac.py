@@ -21,9 +21,24 @@ _COLLECTION_ID = "hdx-hapi"
 _COLLECTION_TITLE = "HDX HAPI Cloud-Native"
 _COLLECTION_DESCRIPTION = (
     "Cloud-native Parquet exports of the UN OCHA Humanitarian API (HAPI), "
-    "covering humanitarian indicators across affected people, food security, "
-    "funding, conflict, and more."
+    "which provides standardized humanitarian indicators designed for seamless "
+    "interoperability from multiple sources. Covers affected people, food "
+    "security, funding, conflict, operational presence, and more. "
+    "Individual dataset licenses vary — see source links."
 )
+_KEYWORDS = ["humanitarian", "hapi", "hdx", "hxl", "ocha", "parquet", "cloud-native"]
+_PROVIDERS = [
+    pystac.Provider(
+        name="UN OCHA HDX Humanitarian API",
+        description=(
+            "The HDX Humanitarian API (HAPI) provides standardized humanitarian "
+            "indicators from multiple sources to facilitate automated workflows "
+            "and visualizations supporting humanitarian decision-making."
+        ),
+        roles=["producer", "processor"],
+        url="https://hapi.humdata.org/",
+    )
+]
 
 
 def build_collection(endpoint_results: list[dict]) -> None:
@@ -112,6 +127,8 @@ def _build_collection(
             ),
         ),
         license="other",
+        keywords=_KEYWORDS,
+        providers=_PROVIDERS,
         stac_extensions=[te.SCHEMA_URI],
         extra_fields={
             "updated": updated_at.isoformat(),
@@ -128,6 +145,30 @@ def _build_collection(
     self_href = f"{base}collection.json" if base else "collection.json"
     collection.add_link(
         pystac.Link(pystac.RelType.SELF, self_href, media_type=_MT.JSON)
+    )
+    collection.add_link(
+        pystac.Link(
+            "license",
+            "https://data.humdata.org/hapi",
+            media_type=_MT.HTML,
+            title="HDX HAPI — per-dataset license information",
+        )
+    )
+    collection.add_link(
+        pystac.Link(
+            "via",
+            "https://hapi.humdata.org/",
+            media_type=_MT.HTML,
+            title="HDX Humanitarian API",
+        )
+    )
+    collection.add_link(
+        pystac.Link(
+            "describedby",
+            "https://hdx-hapi.readthedocs.io/en/latest/",
+            media_type=_MT.HTML,
+            title="HDX HAPI documentation",
+        )
     )
 
     for item in items:
