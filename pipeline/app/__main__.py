@@ -1,4 +1,4 @@
-"""Entry point: extract all configured HAPI endpoints and write Parquet + catalog."""
+"""Entry point: extract all configured HAPI endpoints and write Parquet + index."""
 
 import logging
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """Fetch all HAPI endpoints, write Parquet files, and build catalog.parquet."""
+    """Fetch all HAPI endpoints, write Parquet files, and build index.json."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     results = []

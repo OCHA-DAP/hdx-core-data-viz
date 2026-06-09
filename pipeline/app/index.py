@@ -1,12 +1,13 @@
-"""Build index.parquet — a queryable index of all extracted datasets."""
+"""Build index.json — a queryable index of all extracted datasets."""
 
 import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.parquet as pq
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 from . import config
 
@@ -14,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def build_catalog(endpoint_results: list[dict]) -> None:
-    """Write index.parquet with one row per endpoint."""
+    """Write index.json with one entry per endpoint."""
     updated_at = datetime.now(UTC).isoformat()
-    rows = []
+    entries = []
     for r in endpoint_results:
         schema: pa.Schema = r["schema"]
-        rows.append(
+        entries.append(
             {
                 "id": r["endpoint"]["id"],
                 "theme": r["endpoint"]["theme"],
@@ -27,14 +28,11 @@ def build_catalog(endpoint_results: list[dict]) -> None:
                 "row_count": r["row_count"],
                 "start_datetime": r["start"],
                 "end_datetime": r["end"],
-                "columns": json.dumps(
-                    [{"name": f.name, "type": str(f.type)} for f in schema]
-                ),
+                "columns": [{"name": f.name, "type": str(f.type)} for f in schema],
                 "updated_at": updated_at,
             }
         )
 
-    table = pa.Table.from_pylist(rows)
-    out_path = Path(config.OUTPUT_DIR) / "index.parquet"
-    pq.write_table(table, out_path, compression="zstd", compression_level=15)
-    logger.info("\nWrote catalog → %s (%d entries)", out_path, len(rows))
+    out_path = Path(config.OUTPUT_DIR) / "index.json"
+    out_path.write_text(json.dumps(entries, indent=2))
+    logger.info("\nWrote index → %s (%d entries)", out_path, len(entries))
