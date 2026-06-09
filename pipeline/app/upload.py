@@ -6,7 +6,7 @@ from pathlib import Path
 import obstore as obs
 from obstore.store import S3Store
 
-from .config import OUTPUT_DIR, SOURCE_COOP_BUCKET, SOURCE_COOP_PREFIX
+from .config import OUTPUT_DIR, SOURCE_COOP_BUCKET, SOURCE_COOP_PREFIX, SOURCE_COOP_REGION
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ def sync_output(output_dir: str = OUTPUT_DIR) -> list[str]:
     store = S3Store(
         bucket=SOURCE_COOP_BUCKET,
         prefix=SOURCE_COOP_PREFIX,
+        region=SOURCE_COOP_REGION,
     )
     uploaded: list[str] = []
     for path in sorted(Path(output_dir).rglob("*")):

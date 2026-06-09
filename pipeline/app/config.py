@@ -18,6 +18,7 @@ OPENAPI_URL = "https://hapi.humdata.org/openapi.json"
 OUTPUT_DIR = "output"
 
 SOURCE_COOP_BUCKET = "us-west-2.opendata.source.coop"
+SOURCE_COOP_REGION = "us-west-2"
 # Set to "<org>/<product>" — e.g. "ocha-dap/hdx-hapi"
 SOURCE_COOP_PREFIX: str = os.environ.get("SOURCE_COOP_PREFIX", "")
 
