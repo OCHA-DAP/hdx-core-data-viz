@@ -6,7 +6,12 @@ from pathlib import Path
 import obstore as obs
 from obstore.store import S3Store
 
-from .config import OUTPUT_DIR, SOURCE_COOP_BUCKET, SOURCE_COOP_PREFIX, SOURCE_COOP_REGION
+from .config import (
+    OUTPUT_DIR,
+    SOURCE_COOP_BUCKET,
+    SOURCE_COOP_PREFIX,
+    SOURCE_COOP_REGION,
+)
 
 logger = logging.getLogger(__name__)
 
