@@ -126,7 +126,7 @@ def _build_collection(
                 intervals=[[min(starts, default=None), max(ends, default=None)]]
             ),
         ),
-        license="other",
+        license="CC-BY-4.0",
         keywords=_KEYWORDS,
         providers=_PROVIDERS,
         stac_extensions=[te.SCHEMA_URI],
