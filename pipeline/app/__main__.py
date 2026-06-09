@@ -1,4 +1,4 @@
-"""Entry point: extract all configured HAPI endpoints and write Parquet + index."""
+"""Entry point: extract all configured HAPI endpoints and write Parquet + STAC."""
 
 import logging
 import os
@@ -6,15 +6,15 @@ import os
 import httpx
 
 from .extract import discover_endpoints, fetch_endpoint
-from .index import build_catalog
 from .load import write_parquet
+from .stac import build_collection
 from .upload import sync_output
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """Fetch all HAPI endpoints, write Parquet files, and build index.json."""
+    """Fetch all HAPI endpoints, write Parquet files, and build STAC collection."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     results = []
@@ -36,7 +36,7 @@ def main() -> None:
                 }
             )
 
-    build_catalog(results)
+    build_collection(results)
 
     if os.environ.get("SOURCE_COOP_UPLOAD"):
         sync_output()
