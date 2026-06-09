@@ -1,4 +1,4 @@
-"""Upload output files to Source Cooperative via obstore."""
+"""Sync output files to Source Cooperative via obstore."""
 
 import logging
 from pathlib import Path
@@ -16,8 +16,8 @@ from .config import (
 logger = logging.getLogger(__name__)
 
 
-def sync_output(output_dir: str = OUTPUT_DIR) -> list[str]:
-    """Upload all files in output_dir to Source Cooperative; return uploaded paths.
+def sync_output(output_dir: str = OUTPUT_DIR) -> None:
+    """Sync output_dir to Source Cooperative: upload new/changed files, delete removed.
 
     Credentials are read from the standard AWS environment variables:
     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
@@ -28,12 +28,20 @@ def sync_output(output_dir: str = OUTPUT_DIR) -> list[str]:
         prefix=SOURCE_COOP_PREFIX,
         region=SOURCE_COOP_REGION,
     )
-    uploaded: list[str] = []
-    for path in sorted(Path(output_dir).rglob("*")):
-        if not path.is_file() or path.name.startswith("."):
-            continue
-        key = str(path.relative_to(output_dir))
-        obs.put(store, key, path.read_bytes())
+
+    local_keys = {
+        str(p.relative_to(output_dir))
+        for p in Path(output_dir).rglob("*")
+        if p.is_file() and not p.name.startswith(".")
+    }
+
+    remote_keys = {item["path"] for page in obs.list(store) for item in page}
+
+    to_delete = remote_keys - local_keys
+    for key in sorted(to_delete):
+        obs.delete(store, key)
+        logger.info("Deleted  %s", key)
+
+    for key in sorted(local_keys):
+        obs.put(store, key, Path(output_dir, key).read_bytes())
         logger.info("Uploaded %s", key)
-        uploaded.append(key)
-    return uploaded
