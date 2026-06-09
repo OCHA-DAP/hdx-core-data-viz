@@ -1,4 +1,4 @@
-"""Build catalog.parquet — a queryable index of all extracted datasets."""
+"""Build index.parquet — a queryable index of all extracted datasets."""
 
 import json
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_catalog(endpoint_results: list[dict]) -> None:
-    """Write catalog.parquet with one row per endpoint."""
+    """Write index.parquet with one row per endpoint."""
     updated_at = datetime.now(UTC).isoformat()
     rows = []
     for r in endpoint_results:
@@ -35,6 +35,6 @@ def build_catalog(endpoint_results: list[dict]) -> None:
         )
 
     table = pa.Table.from_pylist(rows)
-    out_path = Path(config.OUTPUT_DIR) / "catalog.parquet"
+    out_path = Path(config.OUTPUT_DIR) / "index.parquet"
     pq.write_table(table, out_path, compression="zstd", compression_level=15)
     logger.info("\nWrote catalog → %s (%d entries)", out_path, len(rows))

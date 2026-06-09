@@ -2,7 +2,7 @@
 
 import base64
 
-EMAIL = "claude@maxmalynowsky.com"
+EMAIL = "user@example.com"
 APP_NAME = "hdx-hapi-cloud-native-poc"
 
 # HAPI v2 expects base64-encoded "app_name:email" (order reversed from v1)

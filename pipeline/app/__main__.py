@@ -4,8 +4,8 @@ import logging
 
 import httpx
 
-from .catalog import build_catalog
 from .extract import discover_endpoints, fetch_endpoint
+from .index import build_catalog
 from .load import write_parquet
 
 logger = logging.getLogger(__name__)

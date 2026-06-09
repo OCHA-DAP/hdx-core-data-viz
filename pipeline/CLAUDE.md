@@ -15,12 +15,12 @@ No tests yet.
 
 ## Architecture
 
-Four-module ETL: `config.ENDPOINTS → extract.fetch_endpoint() → load.write_parquet() → catalog.build_catalog()`
+Four-module ETL: `config.ENDPOINTS → extract.fetch_endpoint() → load.write_parquet() → index.build_catalog()`
 
 - **config.py** — all constants and the endpoint registry. Add new datasets here.
 - **extract.py** — paginates HAPI via `offset`/`limit` until a short page, returns `list[dict]`.
 - **load.py** — writes ZSTD-15 Parquet to `output/<theme>/<name>.parquet`; extracts temporal range for catalog.
-- **catalog.py** — writes `output/catalog.parquet` with one row per endpoint (schema, row count, temporal range).
+- **index.py** — writes `output/index.parquet` with one row per endpoint (schema, row count, temporal range).
 
 ## Notes
 
