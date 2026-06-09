@@ -1,12 +1,14 @@
 """Entry point: extract all configured HAPI endpoints and write Parquet + index."""
 
 import logging
+import os
 
 import httpx
 
 from .extract import discover_endpoints, fetch_endpoint
 from .index import build_catalog
 from .load import write_parquet
+from .upload import sync_output
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,10 @@ def main() -> None:
             )
 
     build_catalog(results)
+
+    if os.environ.get("SOURCE_COOP_UPLOAD"):
+        sync_output()
+
     logger.info("\nDone.")
 
 
