@@ -1,0 +1,12 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "$lib/*": ["./src/lib/*"]
+    }
+  }
+}

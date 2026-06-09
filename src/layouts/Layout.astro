@@ -1,0 +1,198 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "HDX Lens",
+  description = "Explore humanitarian data across HAPI datasets. No downloads. No data engineering.",
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <nav>
+      <div class="nav-inner">
+        <a href={`${base}/`} class="nav-brand">
+          <span class="brand-hdx">HDX</span>
+          <span class="brand-lens">Lens</span>
+        </a>
+        <div class="nav-links">
+          <a href={`${base}/`}>Home</a>
+          <a href={`${base}/explore`}>Explorer</a>
+          <a
+            href="https://humanitarian.atlassian.net/wiki/spaces/HDXINT/pages/4198465537"
+            target="_blank"
+            rel="noopener"
+          >
+            HAPI Docs ↗
+          </a>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer>
+      <div class="footer-inner">
+        <p>
+          Data: <a href="https://data.humdata.org/hapi" target="_blank" rel="noopener">HDX HAPI</a>
+          via
+          <a
+            href="https://data.source.coop/hdx/hapi/collection.json"
+            target="_blank"
+            rel="noopener"
+          >
+            Source Cooperative
+          </a>
+          · License: CC-BY-4.0 · Queries run entirely in your browser via DuckDB-WASM.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: #f4f4f4;
+    font-family: "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333333;
+  }
+
+  a {
+    color: #007ce0;
+  }
+
+  a:visited {
+    color: #005fac;
+  }
+
+  /* ── Nav ────────────────────────────────────────────────────── */
+  nav {
+    background: #fff;
+    border-bottom: 1px solid #cccccc;
+  }
+
+  .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 35px;
+    display: flex;
+    align-items: center;
+    height: 46px;
+    gap: 2rem;
+  }
+
+  .nav-brand {
+    text-decoration: none;
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .brand-hdx {
+    color: #007ce0;
+  }
+
+  .brand-lens {
+    color: #333;
+    font-weight: 400;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 1.25rem;
+    margin-left: auto;
+  }
+
+  .nav-links a {
+    font-size: 13px;
+    color: #555;
+    text-decoration: none;
+    padding: 0.25rem 0;
+  }
+
+  .nav-links a:hover {
+    color: #007ce0;
+  }
+
+  /* ── Main content ─────────────────────────────────────────── */
+  main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 35px 3rem;
+  }
+
+  /* ── Footer ───────────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid #cccccc;
+    background: #fff;
+    margin-top: 3rem;
+  }
+
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1rem 35px;
+  }
+
+  footer p {
+    font-size: 12px;
+    color: #999;
+    margin: 0;
+  }
+
+  footer a {
+    color: #999;
+  }
+
+  /* ── Shared section cards ─────────────────────────────────── */
+  .section-block {
+    background: #fff;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 1.5rem 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-block h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #007ce0;
+    margin: 0 0 0.3rem;
+  }
+
+  .section-sub {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 1.25rem;
+  }
+</style>
