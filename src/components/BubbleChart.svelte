@@ -23,6 +23,14 @@
   const RISK_LABELS: Record<string, string> = {
     '5': 'Very High', '4': 'High', '3': 'Medium', '2': 'Low', '1': 'Very Low',
   }
+  const RISK_ORDER = ['5', '4', '3', '2', '1']
+  const SIZE_EXAMPLES = [
+    { pop: 0,          label: '0' },
+    { pop: 10_000_000, label: '10 M' },
+    { pop: 20_000_000, label: '20 M' },
+    { pop: 30_000_000, label: '30 M' },
+  ]
+  const LEGEND_MAX_D = 36
 
   // Symlog approximation for x >= 0: maps 0 → 0, spreads large values logarithmically
   function symlog(x: number | null | undefined): number {
@@ -74,7 +82,7 @@
       animationDurationUpdate: 700,
       animationEasingUpdate: 'cubicInOut' as const,
       backgroundColor: 'transparent',
-      grid: { top: 20, right: 20, bottom: 64, left: 76 },
+      grid: { top: 20, right: 172, bottom: 64, left: 76 },
       xAxis: {
         type: 'value' as const,
         name: 'Conflict fatalities per 100K population',
@@ -188,11 +196,115 @@
   })
 </script>
 
-<div bind:this={el} class="chart"></div>
+<div class="wrap">
+  <div bind:this={el} class="chart"></div>
+
+  <div class="legend" class:dark={theme === 'dark'}>
+    {#if level === 0}
+      <div class="legend-group">
+        <p class="legend-title">Risk class</p>
+        {#each RISK_ORDER as k}
+          <div class="legend-row">
+            <span class="dot" style:background={RISK_COLORS[k]}></span>
+            <span class="legend-label">{RISK_LABELS[k]}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="legend-group">
+      <p class="legend-title">IDP population</p>
+      {#each SIZE_EXAMPLES as { pop, label }}
+        {@const d = sizeOf(pop) * LEGEND_MAX_D / sizeOf(MAX_IDP)}
+        <div class="size-row">
+          <svg width={LEGEND_MAX_D} height={LEGEND_MAX_D}>
+            <circle
+              cx={LEGEND_MAX_D / 2}
+              cy={LEGEND_MAX_D / 2}
+              r={Math.max(d / 2, 1)}
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              opacity="0.45"
+            />
+          </svg>
+          <span class="legend-label">{label}</span>
+        </div>
+      {/each}
+    </div>
+  </div>
+</div>
 
 <style>
+  .wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
   .chart {
     width: 100%;
     height: 100%;
+  }
+
+  .legend {
+    position: absolute;
+    top: 20px;
+    right: 8px;
+    width: 152px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    color: #555;
+    font-size: 11px;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .legend.dark {
+    color: #888;
+  }
+
+  .legend-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .legend-title {
+    margin: 0 0 4px;
+    font-size: 11px;
+    color: inherit;
+    opacity: 0.7;
+  }
+
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.4;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .legend-label {
+    color: inherit;
+  }
+
+  .size-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1;
+  }
+
+  .size-row svg {
+    flex-shrink: 0;
   }
 </style>
