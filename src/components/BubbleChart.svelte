@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte'
   import * as echarts from 'echarts'
-  import type { BubbleRow } from '../lib/hapi.js'
+  import type { BubbleRow, VariableSpec } from '../lib/hapi.js'
 
   interface Props {
     data: BubbleRow[]
@@ -10,9 +10,12 @@
     theme: 'dark' | 'light'
     noDataCodes: Set<string>
     onselect: (code: string, name: string) => void
+    xSpec: VariableSpec
+    ySpec: VariableSpec
+    sizeSpec: VariableSpec
   }
 
-  let { data, year, level, theme, noDataCodes, onselect }: Props = $props()
+  let { data, year, level, theme, noDataCodes, onselect, xSpec, ySpec, sizeSpec }: Props = $props()
 
   let el: HTMLDivElement | undefined = $state()
   let chart: echarts.ECharts | undefined
@@ -24,15 +27,8 @@
     '5': 'Very High', '4': 'High', '3': 'Medium', '2': 'Low', '1': 'Very Low',
   }
   const RISK_ORDER = ['5', '4', '3', '2', '1']
-  const SIZE_EXAMPLES = [
-    { pop: 0,          label: '0' },
-    { pop: 10_000_000, label: '10 M' },
-    { pop: 20_000_000, label: '20 M' },
-    { pop: 30_000_000, label: '30 M' },
-  ]
   const LEGEND_MAX_D = 36
 
-  // Symlog approximation for x >= 0: maps 0 → 0, spreads large values logarithmically
   function symlog(x: number | null | undefined): number {
     return Math.log1p(x ?? 0)
   }
@@ -40,28 +36,39 @@
     return Math.expm1(y)
   }
 
-  // Map idp_population to symbol diameter (px), matching Vega area scale [80, 4000]
-  const MAX_IDP = 30_000_000
-  function sizeOf(pop: number | null | undefined): number {
-    const area = pop ? 80 + (4000 - 80) * Math.min(pop / MAX_IDP, 1) : 80
+  function applyScale(v: number | null | undefined, spec: VariableSpec): number {
+    return spec.scale === 'symlog' ? symlog(v) : (v ?? 0)
+  }
+
+  function sizeOf(v: number | null | undefined, maxVal: number): number {
+    const capped = Math.min(v ?? 0, maxVal)
+    const area = maxVal > 0 ? 80 + (4000 - 80) * (capped / maxVal) : 80
     return 2 * Math.sqrt(area / Math.PI)
   }
 
-  function makeSeriesData(rows: BubbleRow[], lv: number, ndc: Set<string>) {
-    return rows.map(r => {
+  const sizeMax = $derived(sizeSpec.sizeMax ?? Math.max(1, ...data.map(r => r.size)))
+
+  const sizeExamples = $derived(
+    sizeSpec.sizeExamples ?? [0, 0.33, 0.67, 1].map(f => ({
+      value: Math.round(f * sizeMax),
+      label: sizeSpec.format(Math.round(f * sizeMax)),
+    }))
+  )
+
+  function makeSeriesData(rows: BubbleRow[], lv: number, ndc: Set<string>, maxSz: number) {
+    return rows.filter(r => r.x != null && r.y != null).map(r => {
       const drillable = lv >= 2 || !ndc.has(r.code)
       return {
         id: r.code,
         name: r.name,
-        value: [symlog(r.fatalities_per_100k), r.ipc_phase3_fraction ?? 0],
-        symbolSize: sizeOf(r.idp_population),
+        value: [applyScale(r.x, xSpec), applyScale(r.y, ySpec)],
+        symbolSize: sizeOf(r.size, maxSz),
         itemStyle: {
           color: lv === 0 ? (RISK_COLORS[r.risk_class ?? ''] ?? '#f46d43') : '#f46d43',
           opacity: drillable ? 0.8 : 0.18,
           borderColor: 'rgba(0,0,0,0.12)',
           borderWidth: 1,
         },
-        // stashed for click handler and tooltip
         code: r.code,
         drillable,
         raw: r,
@@ -69,7 +76,20 @@
     })
   }
 
-  function buildOption(rows: BubbleRow[], t: 'dark' | 'light', lv: number, ndc: Set<string>) {
+  function axisFormatter(spec: VariableSpec) {
+    return (v: number) => {
+      if (spec.scale === 'symlog') {
+        const orig = symexp(v)
+        if (orig < 0.1) return '0'
+        if (orig < 10)  return orig.toFixed(1)
+        return Math.round(orig).toLocaleString()
+      }
+      if (spec.max != null && spec.max <= 1) return Math.round(v * 100) + '%'
+      return v.toLocaleString()
+    }
+  }
+
+  function buildOption(rows: BubbleRow[], t: 'dark' | 'light', lv: number, ndc: Set<string>, maxSz: number, yr: number) {
     const isDark = t === 'dark'
     const textColor   = isDark ? '#888' : '#555'
     const titleColor  = isDark ? '#aaa' : '#333'
@@ -85,19 +105,16 @@
       grid: { top: 20, right: 172, bottom: 64, left: 76 },
       xAxis: {
         type: 'value' as const,
-        name: 'Conflict fatalities per 100K population',
+        name: xSpec.label,
         nameLocation: 'middle' as const,
         nameGap: 44,
         nameTextStyle: { color: titleColor, fontSize: 12 },
+        min: xSpec.scale === 'symlog' ? undefined : xSpec.min,
+        max: xSpec.scale === 'symlog' ? undefined : xSpec.max,
         axisLabel: {
           color: textColor,
           fontSize: 11,
-          formatter: (v: number) => {
-            const orig = symexp(v)
-            if (orig < 0.1) return '0'
-            if (orig < 10)  return orig.toFixed(1)
-            return Math.round(orig).toLocaleString()
-          },
+          formatter: axisFormatter(xSpec),
         },
         axisLine: { show: false },
         axisTick: { show: false },
@@ -105,16 +122,16 @@
       },
       yAxis: {
         type: 'value' as const,
-        name: 'Population in IPC Phase 3+ food crisis',
+        name: ySpec.label,
         nameLocation: 'middle' as const,
         nameGap: 52,
         nameTextStyle: { color: titleColor, fontSize: 12 },
-        min: 0,
-        max: 1,
+        min: ySpec.scale === 'symlog' ? undefined : ySpec.min,
+        max: ySpec.scale === 'symlog' ? undefined : ySpec.max,
         axisLabel: {
           color: textColor,
           fontSize: 11,
-          formatter: (v: number) => Math.round(v * 100) + '%',
+          formatter: axisFormatter(ySpec),
         },
         axisLine: { show: false },
         axisTick: { show: false },
@@ -130,34 +147,50 @@
           const lines = [
             `<b>${r.name}</b>`,
             `Year: ${r.year ?? '—'}`,
-            `Fatalities per 100K: ${r.fatalities_per_100k != null ? r.fatalities_per_100k.toFixed(1) : '—'}`,
-            `IPC Phase 3+: ${r.ipc_phase3_fraction != null ? (r.ipc_phase3_fraction * 100).toFixed(1) + '%' : '—'}`,
-            `IDPs: ${r.idp_population != null ? r.idp_population.toLocaleString() : '—'}`,
+            `${xSpec.label}: ${r.x != null ? xSpec.format(r.x) : '—'}`,
+            `${ySpec.label}: ${r.y != null ? ySpec.format(r.y) : '—'}`,
+            `${sizeSpec.label}: ${sizeSpec.format(r.size)}`,
           ]
           if (lv === 0 && r.risk_class) lines.push(`Risk class: ${RISK_LABELS[r.risk_class] ?? r.risk_class}`)
           if (lv < 2) lines.push(`Sub-region data: ${params.data.drillable ? 'Available' : 'No data at this level'}`)
           return lines.join('<br/>')
         },
       },
+      graphic: [{
+        type: 'text',
+        right: 180,
+        bottom: 70,
+        z: 0,
+        style: {
+          text: yr ? String(yr) : '',
+          fontSize: 120,
+          fontWeight: 'bold',
+          fill: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+          textAlign: 'right',
+        },
+      }],
       series: [{
         id: 'bubbles',
         type: 'scatter' as const,
-        data: makeSeriesData(rows, lv, ndc),
+        data: makeSeriesData(rows, lv, ndc, maxSz),
         cursor: lv < 2 ? 'pointer' : 'default',
         emphasis: { scale: 1.15 },
       }],
     }
   }
 
-  // Effect 1: full rebuild on structural changes (data, level, theme, noDataCodes).
-  // Year is read via untrack so this never re-runs when only the year changes.
   $effect(() => {
     if (!el) return
     const t = theme
     const lv = level
     const ndc = new Set(noDataCodes)
+    const maxSz = untrack(() => sizeMax)
     const yr = untrack(() => year)
     const rows = data.filter(r => r.year === yr)
+    const _xSpec = xSpec
+    const _ySpec = ySpec
+
+    void _xSpec; void _ySpec  // ensure reactive dependency
 
     if (!chart) {
       chart = echarts.init(el, null, { renderer: 'canvas' })
@@ -172,21 +205,21 @@
       })
     }
 
-    chart.setOption(buildOption(rows, t, lv, ndc), { notMerge: true })
+    chart.setOption(buildOption(rows, t, lv, ndc, maxSz, yr), { notMerge: true })
   })
 
-  // Effect 2: animate year changes — only tracks `year`.
-  // Everything else is read via untrack so structural changes don't trigger this.
   $effect(() => {
     const yr = year
     if (!chart) return
     const lv  = untrack(() => level)
     const ndc = new Set(untrack(() => noDataCodes))
+    const maxSz = untrack(() => sizeMax)
     const rows = untrack(() => data).filter(r => r.year === yr)
 
     chart.setOption({
       animation: true,
-      series: [{ id: 'bubbles', data: makeSeriesData(rows, lv, ndc) }],
+      graphic: [{ style: { text: String(yr) } }],
+      series: [{ id: 'bubbles', data: makeSeriesData(rows, lv, ndc, maxSz) }],
     })
   })
 
@@ -213,9 +246,9 @@
     {/if}
 
     <div class="legend-group">
-      <p class="legend-title">IDP population</p>
-      {#each SIZE_EXAMPLES as { pop, label }}
-        {@const d = sizeOf(pop) * LEGEND_MAX_D / sizeOf(MAX_IDP)}
+      <p class="legend-title">{sizeSpec.label}</p>
+      {#each sizeExamples as ex}
+        {@const d = sizeOf(ex.value, sizeMax) * LEGEND_MAX_D / sizeOf(sizeMax, sizeMax)}
         <div class="size-row">
           <svg width={LEGEND_MAX_D} height={LEGEND_MAX_D}>
             <circle
@@ -228,7 +261,7 @@
               opacity="0.45"
             />
           </svg>
-          <span class="legend-label">{label}</span>
+          <span class="legend-label">{ex.label}</span>
         </div>
       {/each}
     </div>

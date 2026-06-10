@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { buildBubbleData, type AdminLevel, type BubbleRow } from '../lib/hapi.js'
+  import { buildBubbleData, AXIS_VARS, SIZE_VARS, type AdminLevel, type BubbleRow } from '../lib/hapi.js'
   import BubbleChart from './BubbleChart.svelte'
 
   let level: AdminLevel = $state(0)
@@ -8,6 +8,14 @@
   let admin1Code: string | undefined = $state()
   let admin1Name: string | undefined = $state()
   let theme: 'dark' | 'light' = $state('light')
+
+  let xVarId: string = $state('conflict_fatalities_per_100k')
+  let yVarId: string = $state('ipc_phase3_fraction')
+  let sizeVarId: string = $state('idp_population')
+
+  const xSpec = $derived(AXIS_VARS.find(v => v.id === xVarId)!)
+  const ySpec = $derived(AXIS_VARS.find(v => v.id === yVarId)!)
+  const sizeSpec = $derived(SIZE_VARS.find(v => v.id === sizeVarId)!)
 
   let data: BubbleRow[] = $state([])
   let selectedYear: number = $state(0)
@@ -20,7 +28,7 @@
 
   const years = $derived.by(() => {
     const s = new Set(
-      data.filter(r => r.ipc_phase3_fraction != null).map(r => r.year).filter(Boolean)
+      data.filter(r => r.x != null && r.y != null).map(r => r.year).filter(Boolean)
     )
     return [...s].sort((a, b) => a - b)
   })
@@ -46,6 +54,11 @@
   function onSelect(code: string, name: string) {
     wasDrillAttempt = true
     if (level === 0) {
+      // Reset level-0-only variables before drilling in
+      if (AXIS_VARS.find(v => v.id === xVarId)?.levelOnly === 0)
+        xVarId = 'conflict_fatalities_per_100k'
+      if (AXIS_VARS.find(v => v.id === yVarId)?.levelOnly === 0)
+        yVarId = 'ipc_phase3_fraction'
       countryCode = code
       countryName = name
       level = 1
@@ -65,6 +78,9 @@
   $effect(() => {
     const _level = level
     const _parent = _level === 1 ? countryCode : _level === 2 ? admin1Code : undefined
+    const _x = xVarId
+    const _y = yVarId
+    const _sz = sizeVarId
     const _isDrill = wasDrillAttempt
     wasDrillAttempt = false
     let cancelled = false
@@ -72,7 +88,7 @@
     loading = true
     error = null
 
-    buildBubbleData(_level, _parent)
+    buildBubbleData(_level, _parent, _x, _y, _sz)
       .then(rows => {
         if (!cancelled) {
           if (rows.length === 0 && _isDrill) {
@@ -82,9 +98,13 @@
             drillTo((_level - 1) as AdminLevel)
           } else {
             data = rows
-            const rowYears = [...new Set(rows.map(r => r.year).filter(Boolean))].sort((a, b) => a - b)
+            const rowYears = [
+              ...new Set(rows.filter(r => r.x != null && r.y != null).map(r => r.year).filter(Boolean))
+            ].sort((a, b) => a - b)
             const maxY = rowYears[rowYears.length - 1] ?? 0
-            selectedYear = rowYears.includes(2023) ? 2023 : maxY
+            selectedYear = rowYears.includes(selectedYear)
+              ? selectedYear
+              : rowYears.includes(2023) ? 2023 : maxY
             loading = false
           }
         }
@@ -130,6 +150,70 @@
     </button>
   </nav>
 
+  <div class="controls" class:dark={theme === 'dark'}>
+    <label class="ctrl-label">
+      X axis
+      <select
+        value={xVarId}
+        onchange={(e) => { xVarId = (e.target as HTMLSelectElement).value }}
+      >
+        {#each AXIS_VARS as v}
+          <option
+            value={v.id}
+            disabled={v.id === yVarId || (v.levelOnly === 0 && level > 0)}
+          >{v.label}</option>
+        {/each}
+      </select>
+    </label>
+
+    <label class="ctrl-label">
+      Y axis
+      <select
+        value={yVarId}
+        onchange={(e) => { yVarId = (e.target as HTMLSelectElement).value }}
+      >
+        {#each AXIS_VARS as v}
+          <option
+            value={v.id}
+            disabled={v.id === xVarId || (v.levelOnly === 0 && level > 0)}
+          >{v.label}</option>
+        {/each}
+      </select>
+    </label>
+
+    <label class="ctrl-label">
+      Bubble size
+      <select
+        value={sizeVarId}
+        onchange={(e) => { sizeVarId = (e.target as HTMLSelectElement).value }}
+      >
+        {#each SIZE_VARS as v}
+          <option value={v.id}>{v.label}</option>
+        {/each}
+      </select>
+    </label>
+
+    {#if !loading && !error && years.length > 0}
+      <div class="year-ctrl">
+        {#if years.length > 1}
+          <span class="year-bound">{years[0]}</span>
+          <input
+            type="range"
+            min={0}
+            max={years.length - 1}
+            step="1"
+            value={years.indexOf(selectedYear)}
+            oninput={(e) => {
+              const idx = parseInt((e.target as HTMLInputElement).value, 10)
+              selectedYear = years[idx] ?? selectedYear
+            }}
+          />
+          <span class="year-bound">{years[years.length - 1]}</span>
+        {/if}
+      </div>
+    {/if}
+  </div>
+
   <div class="chart-area">
     {#if loading}
       <div class="overlay">
@@ -146,7 +230,17 @@
         <p>No data available for this region.</p>
       </div>
     {:else}
-      <BubbleChart {data} year={selectedYear} {level} {theme} {noDataCodes} onselect={onSelect} />
+      <BubbleChart
+        {data}
+        year={selectedYear}
+        {level}
+        {theme}
+        {noDataCodes}
+        onselect={onSelect}
+        {xSpec}
+        {ySpec}
+        {sizeSpec}
+      />
       {#if level < 2}
         <p class="hint">
           {#if noDataCodes.size > 0}
@@ -162,30 +256,6 @@
     {/if}
   </div>
 
-  {#if !loading && !error && years.length > 1}
-    <div class="year-bar">
-      <span class="year-display">{selectedYear}</span>
-      <div class="slider-track">
-        <span class="year-bound">{years[0]}</span>
-        <input
-          type="range"
-          min={0}
-          max={years.length - 1}
-          step="1"
-          value={years.indexOf(selectedYear)}
-          oninput={(e) => {
-            const idx = parseInt((e.target as HTMLInputElement).value, 10)
-            selectedYear = years[idx] ?? selectedYear
-          }}
-        />
-        <span class="year-bound">{years[years.length - 1]}</span>
-      </div>
-    </div>
-  {:else if !loading && !error && years.length === 1}
-    <div class="year-bar single">
-      <span class="year-display">{years[0]}</span>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -238,33 +308,51 @@
     cursor: default;
   }
 
-  .year-bar {
-    flex-shrink: 0;
+  .controls {
     display: flex;
-    flex-direction: column;
+    gap: 16px;
+    padding: 10px 20px 8px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--domain, rgba(0,0,0,0.06));
+  }
+
+  .ctrl-label {
+    display: flex;
     align-items: center;
     gap: 6px;
-    padding: 16px 40px 20px;
-    border-top: 1px solid var(--domain, rgba(0,0,0,0.08));
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
-  .year-bar.single {
-    padding: 12px 40px 16px;
-  }
-
-  .year-display {
-    font-size: 36px;
-    font-weight: 700;
-    letter-spacing: -1px;
+  .ctrl-label select {
+    font-size: 12px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--domain, rgba(0,0,0,0.15));
+    background: var(--bg, #fff);
     color: var(--text);
-    line-height: 1;
+    cursor: pointer;
+    max-width: 260px;
   }
 
-  .slider-track {
+  .controls.dark .ctrl-label select {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.15);
+    color: #ddd;
+  }
+
+  .ctrl-label select option:disabled {
+    color: #aaa;
+  }
+
+  .year-ctrl {
     display: flex;
     align-items: center;
-    gap: 12px;
-    width: 100%;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   .year-bound {
@@ -274,8 +362,8 @@
     flex-shrink: 0;
   }
 
-  .slider-track input[type='range'] {
-    flex: 1;
+  .year-ctrl input[type='range'] {
+    width: 140px;
     height: 6px;
     accent-color: #f46d43;
     cursor: pointer;
@@ -284,36 +372,36 @@
     background: transparent;
   }
 
-  .slider-track input[type='range']::-webkit-slider-runnable-track {
+  .year-ctrl input[type='range']::-webkit-slider-runnable-track {
     height: 6px;
     border-radius: 3px;
     background: var(--spinner-track, rgba(0,0,0,0.12));
   }
 
-  .slider-track input[type='range']::-webkit-slider-thumb {
+  .year-ctrl input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: #f46d43;
-    margin-top: -8px;
+    margin-top: -7px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.25);
     transition: transform 0.1s;
   }
 
-  .slider-track input[type='range']:hover::-webkit-slider-thumb {
+  .year-ctrl input[type='range']:hover::-webkit-slider-thumb {
     transform: scale(1.15);
   }
 
-  .slider-track input[type='range']::-moz-range-track {
+  .year-ctrl input[type='range']::-moz-range-track {
     height: 6px;
     border-radius: 3px;
     background: var(--spinner-track, rgba(0,0,0,0.12));
   }
 
-  .slider-track input[type='range']::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
+  .year-ctrl input[type='range']::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: #f46d43;
     border: none;
