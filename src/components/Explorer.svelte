@@ -171,6 +171,17 @@
         {/if}
       {/each}
     </div>
+    <span class="tagline"
+      >Explore humanitarian crisis data across countries and regions <span class="info-icon"
+        >ⓘ<span class="info-tooltip"
+          >HDX Lens is an interactive Gapminder-style explorer for humanitarian crisis data. It draws
+          from OCHA's Humanitarian API (HAPI) to plot countries and regions on axes like conflict
+          fatalities, food insecurity, poverty, and displacement — letting you compare across
+          crises, drill from country to sub-region, and step through years. All data loads directly
+          in the browser; no account or download needed.</span
+        ></span
+      ></span
+    >
   </nav>
 
   <div class="controls" class:dark={theme === "dark"}>
@@ -328,6 +339,41 @@
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+
+  .tagline {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .info-icon {
+    position: relative;
+    cursor: default;
+    font-size: 13px;
+  }
+
+  .info-tooltip {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    width: 300px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--text-sep);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: normal;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 100;
+  }
+
+  .info-icon:hover .info-tooltip {
+    display: block;
   }
 
   .sep {
