@@ -1,5 +1,4 @@
-import { asyncBufferFromUrl, parquetReadObjects } from "hyparquet";
-import { compressors } from "hyparquet-compressors";
+import * as duckdb from "@duckdb/duckdb-wasm";
 
 const BASE = "https://data.source.coop/hdx/hapi";
 
@@ -15,8 +14,8 @@ export interface VariableSpec {
   sizeMax?: number;
   sizeExamples?: { value: number; label: string }[];
   levelOnly?: 0;
-  yearNote?: string; // compact date range, e.g. "2017–2026"
-  levelNote?: string; // coverage caveat, e.g. "sub-national coverage varies"
+  yearNote?: string;
+  levelNote?: string;
 }
 
 export const AXIS_VARS: VariableSpec[] = [
@@ -135,26 +134,47 @@ export interface BubbleRow {
   risk_class?: string | null;
 }
 
-async function read(url: string, columns: string[]): Promise<Record<string, unknown>[]> {
-  const file = await asyncBufferFromUrl({ url });
-  return parquetReadObjects({ file, compressors, columns }) as Promise<Record<string, unknown>[]>;
+// ── DuckDB singleton ──────────────────────────────────────────────────────────
+
+let connPromise: Promise<duckdb.AsyncDuckDBConnection> | null = null;
+
+function getConn(): Promise<duckdb.AsyncDuckDBConnection> {
+  if (connPromise) return connPromise;
+  connPromise = (async () => {
+    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+    const workerUrl = URL.createObjectURL(
+      new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" }),
+    );
+    const worker = new Worker(workerUrl);
+    URL.revokeObjectURL(workerUrl);
+    const db = new duckdb.AsyncDuckDB(
+      new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING),
+      worker,
+    );
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    const conn = await db.connect();
+    await conn.query(
+      "SET enable_http_metadata_cache=true; SET enable_object_cache=true;",
+    );
+    return conn;
+  })();
+  return connPromise;
 }
 
-async function safeRead(url: string, columns: string[]): Promise<Record<string, unknown>[]> {
-  try {
-    return await read(url, columns);
-  } catch {
-    return [];
-  }
-}
+// Warm up DuckDB immediately when the module loads
+getConn();
 
-const num = (v: unknown): number => (v == null ? 0 : typeof v === "bigint" ? Number(v) : Number(v));
+// ── Result cache ──────────────────────────────────────────────────────────────
 
-const getYear = (v: unknown): number => parseInt(String(v ?? "").slice(0, 4), 10) || 0;
+const cache = new Map<string, BubbleRow[]>();
+
+// ── URL helpers ───────────────────────────────────────────────────────────────
 
 function partUrl(path: string, level: AdminLevel): string {
   return `${BASE}/${path}/admin_level=${level}/part-0.parquet`;
 }
+
+// ── Main query ────────────────────────────────────────────────────────────────
 
 export async function buildBubbleData(
   level: AdminLevel,
@@ -163,249 +183,209 @@ export async function buildBubbleData(
   yId: string,
   sizeId: string,
 ): Promise<BubbleRow[]> {
+  const cacheKey = `${level}|${parentCode ?? ""}|${xId}|${yId}|${sizeId}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const conn = await getConn();
+
   const codeCol = level === 0 ? "location_code" : level === 1 ? "admin1_code" : "admin2_code";
   const nameCol = level === 0 ? "location_name" : level === 1 ? "admin1_name" : "admin2_name";
   const filterCol = level === 1 ? "location_code" : level === 2 ? "admin1_code" : null;
-  const scopeCols = filterCol ? [filterCol] : [];
-
-  const inScope = (r: Record<string, unknown>) =>
-    !filterCol || !parentCode || r[filterCol] === parentCode;
+  const filterClause =
+    filterCol && parentCode ? `AND ${filterCol} = '${parentCode}'` : "";
 
   const ids = [xId, yId, sizeId];
   const needsConflict = ids.some((id) => id.startsWith("conflict_"));
   const needsFood = ids.includes("ipc_phase3_fraction");
   const needsIDPs = ids.includes("idp_population");
   const needsPoverty = ids.some((id) => id.startsWith("poverty_"));
+  const needsRisk = level === 0;
+  const needsFunding = level === 0 && ids.includes("funding_gap_pct");
 
-  const [popRows, conflictRows, foodRows, idpRows, povertyRows, riskRows, fundingRows] =
-    await Promise.all([
-      // Always fetch: names + denominator for per-100K
-      safeRead(partUrl("geography-infrastructure/baseline-population", level), [
-        ...scopeCols,
-        codeCol,
-        nameCol,
-        "gender",
-        "age_range",
-        "population",
-        "reference_period_start",
-      ]),
-      needsConflict
-        ? safeRead(partUrl("coordination-context/conflict-events", level), [
-            ...scopeCols,
-            codeCol,
-            nameCol,
-            "fatalities",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-      needsFood
-        ? safeRead(partUrl("food-security-nutrition-poverty/food-security", level), [
-            ...scopeCols,
-            codeCol,
-            "ipc_phase",
-            "ipc_type",
-            "population_fraction_in_phase",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-      needsIDPs
-        ? safeRead(partUrl("affected-people/idps", level), [
-            ...scopeCols,
-            codeCol,
-            "population",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-      needsPoverty
-        ? safeRead(partUrl("food-security-nutrition-poverty/poverty-rate", level), [
-            ...scopeCols,
-            codeCol,
-            "mpi",
-            "headcount_ratio",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-      // Always at level 0: risk colors + optional risk score axis
-      level === 0
-        ? safeRead(`${BASE}/coordination-context/national-risk.parquet`, [
-            "location_code",
-            "risk_class",
-            "overall_risk",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-      level === 0 && ids.includes("funding_gap_pct")
-        ? safeRead(`${BASE}/coordination-context/funding.parquet`, [
-            "location_code",
-            "requirements_usd",
-            "funding_usd",
-            "reference_period_start",
-          ])
-        : Promise.resolve([]),
-    ]);
+  const popUrl = partUrl("geography-infrastructure/baseline-population", level);
+  const conflictUrl = partUrl("coordination-context/conflict-events", level);
+  const foodUrl = partUrl("food-security-nutrition-poverty/food-security", level);
+  const idpUrl = partUrl("affected-people/idps", level);
+  const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level);
+  const riskUrl = `${BASE}/coordination-context/national-risk.parquet`;
+  const fundingUrl = `${BASE}/coordination-context/funding.parquet`;
 
-  // Name map: baseline pop is reliable for all admin levels
-  const nameMap = new Map<string, string>();
-  for (const r of popRows) {
-    if (inScope(r) && r[codeCol] && r[nameCol]) {
-      nameMap.set(r[codeCol] as string, r[nameCol] as string);
-    }
-  }
-  for (const r of conflictRows) {
-    if (inScope(r) && r[codeCol] && r[nameCol] && !nameMap.has(r[codeCol] as string)) {
-      nameMap.set(r[codeCol] as string, r[nameCol] as string);
-    }
+  // Map each variable id to the CTE name that holds its (code, year) keys
+  function xyCte(id: string): string {
+    if (id.startsWith("conflict_")) return "conflict_agg";
+    if (id === "ipc_phase3_fraction") return "food_agg";
+    if (id === "idp_population") return "idp_agg";
+    if (id.startsWith("poverty_")) return "poverty_agg";
+    if (id === "national_risk_overall") return "risk_agg";
+    if (id === "funding_gap_pct") return "funding_agg";
+    return "pop"; // baseline_population — use pop as anchor
   }
 
-  // Baseline population: latest year per code (denominator + optional size)
-  const popByCode = new Map<string, number>();
-  const popYearByCode = new Map<string, number>();
-  for (const r of popRows) {
-    if (!inScope(r) || r.gender !== "all" || r.age_range !== "all") continue;
-    const code = r[codeCol] as string;
-    const year = getYear(r.reference_period_start);
-    if (!popYearByCode.has(code) || year > popYearByCode.get(code)!) {
-      popYearByCode.set(code, year);
-      popByCode.set(code, num(r.population));
-    }
-  }
-
-  // Conflict fatalities: (code:year) → total
-  const conflictMap = new Map<string, number>();
-  for (const r of conflictRows) {
-    if (!inScope(r)) continue;
-    const k = `${r[codeCol]}:${getYear(r.reference_period_start)}`;
-    conflictMap.set(k, (conflictMap.get(k) ?? 0) + num(r.fatalities));
-  }
-
-  // IPC Phase 3+ fraction: (code:year) → sum of phases 3+4+5 fractions
-  const foodMap = new Map<string, number>();
-  for (const r of foodRows) {
-    if (!inScope(r)) continue;
-    if (r.ipc_type !== "current") continue;
-    if (!["3", "4", "5"].includes(r.ipc_phase as string)) continue;
-    const k = `${r[codeCol]}:${getYear(r.reference_period_start)}`;
-    foodMap.set(k, (foodMap.get(k) ?? 0) + num(r.population_fraction_in_phase));
-  }
-
-  // IDP population: (code:year) → total
-  const idpMap = new Map<string, number>();
-  for (const r of idpRows) {
-    if (!inScope(r)) continue;
-    const k = `${r[codeCol]}:${getYear(r.reference_period_start)}`;
-    idpMap.set(k, (idpMap.get(k) ?? 0) + num(r.population));
-  }
-
-  // Poverty: (code:year) → headcount_ratio and mpi
-  const povertyHeadcountMap = new Map<string, number>();
-  const povertyMpiMap = new Map<string, number>();
-  for (const r of povertyRows) {
-    if (!inScope(r)) continue;
-    const k = `${r[codeCol]}:${getYear(r.reference_period_start)}`;
-    if (r.headcount_ratio != null) povertyHeadcountMap.set(k, num(r.headcount_ratio));
-    if (r.mpi != null) povertyMpiMap.set(k, num(r.mpi));
-  }
-
-  // National risk: code → risk_class (color) + code:year → overall_risk
-  const riskClassMap = new Map<string, string>();
-  const riskScoreMap = new Map<string, number>();
-  for (const r of riskRows) {
-    if (r.risk_class) riskClassMap.set(r.location_code as string, r.risk_class as string);
-    if (r.overall_risk != null) {
-      const k = `${r.location_code}:${getYear(r.reference_period_start)}`;
-      riskScoreMap.set(k, num(r.overall_risk));
-    }
-  }
-
-  // Funding gap: (location_code:year) → (1 - funded/required) × 100
-  const fundingReqMap = new Map<string, number>();
-  const fundingActMap = new Map<string, number>();
-  for (const r of fundingRows) {
-    const k = `${r.location_code}:${getYear(r.reference_period_start)}`;
-    fundingReqMap.set(k, (fundingReqMap.get(k) ?? 0) + num(r.requirements_usd));
-    fundingActMap.set(k, (fundingActMap.get(k) ?? 0) + num(r.funding_usd));
-  }
-  const fundingGapMap = new Map<string, number>();
-  for (const k of fundingReqMap.keys()) {
-    const req = fundingReqMap.get(k)!;
-    if (req > 0) {
-      const funded = fundingActMap.get(k) ?? 0;
-      fundingGapMap.set(k, Math.max(0, (1 - funded / req) * 100));
-    }
-  }
-
-  function mapForId(id: string): Map<string, number> {
+  // SQL expression for each variable in the final SELECT
+  function varExpr(id: string): string {
     switch (id) {
       case "conflict_fatalities_per_100k":
+        return "c.fatalities * 100000.0 / NULLIF(p.population, 0)";
       case "conflict_fatalities":
-        return conflictMap;
+        return "c.fatalities";
       case "ipc_phase3_fraction":
-        return foodMap;
+        return "f.ipc_phase3_fraction";
       case "idp_population":
-        return idpMap;
+        return "COALESCE(i.idp_population, 0)";
       case "poverty_headcount_ratio":
-        return povertyHeadcountMap;
+        return "pv.headcount_ratio";
       case "poverty_mpi":
-        return povertyMpiMap;
+        return "pv.mpi";
       case "national_risk_overall":
-        return riskScoreMap;
+        return "r.overall_risk";
       case "funding_gap_pct":
-        return fundingGapMap;
-      default:
-        return new Map();
-    }
-  }
-
-  function getVal(id: string, k: string, code: string): number | null {
-    switch (id) {
-      case "conflict_fatalities_per_100k": {
-        if (!conflictMap.has(k)) return null;
-        const pop = popByCode.get(code);
-        return pop ? (conflictMap.get(k)! / pop) * 100_000 : null;
-      }
-      case "conflict_fatalities":
-        return conflictMap.has(k) ? conflictMap.get(k)! : null;
-      case "ipc_phase3_fraction":
-        return foodMap.has(k) ? foodMap.get(k)! : null;
-      case "idp_population":
-        return idpMap.get(k) ?? 0;
-      case "poverty_headcount_ratio":
-        return povertyHeadcountMap.has(k) ? povertyHeadcountMap.get(k)! : null;
-      case "poverty_mpi":
-        return povertyMpiMap.has(k) ? povertyMpiMap.get(k)! : null;
-      case "national_risk_overall":
-        return riskScoreMap.has(k) ? riskScoreMap.get(k)! : null;
-      case "funding_gap_pct":
-        return fundingGapMap.has(k) ? fundingGapMap.get(k)! : null;
+        return "GREATEST(0.0, (1.0 - fn.funded / NULLIF(fn.req, 0)) * 100.0)";
       case "baseline_population":
-        return popByCode.get(code) ?? 0;
+        return "CAST(p.population AS DOUBLE)";
       default:
-        return null;
+        return "NULL";
     }
   }
 
-  // Keys driven by x and y maps; size never adds new (code:year) combinations
-  const allKeys = new Set([...mapForId(xId).keys(), ...mapForId(yId).keys()]);
+  const xCteName = xyCte(xId);
+  const yCteName = xyCte(yId);
 
+  // Determine which JOIN aliases are referenced in the final SELECT
+  const needsC = needsConflict;
+  const needsF = needsFood;
+  const needsI = needsIDPs;
+  const needsPv = needsPoverty;
+  const needsFn = needsFunding;
+
+  const sql = `
+WITH
+pop AS (
+  SELECT ${codeCol} AS code, ${nameCol} AS name, population
+  FROM read_parquet('${popUrl}')
+  WHERE gender = 'all' AND age_range = 'all' ${filterClause}
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY ${codeCol} ORDER BY reference_period_start DESC) = 1
+)
+${
+  needsConflict
+    ? `,
+conflict_agg AS (
+  SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(fatalities) AS fatalities
+  FROM read_parquet('${conflictUrl}')
+  WHERE 1=1 ${filterClause}
+  GROUP BY code, year
+)`
+    : ""
+}
+${
+  needsFood
+    ? `,
+food_agg AS (
+  SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(population_fraction_in_phase) AS ipc_phase3_fraction
+  FROM read_parquet('${foodUrl}')
+  WHERE ipc_type = 'current' AND ipc_phase IN ('3','4','5') ${filterClause}
+  GROUP BY code, year
+)`
+    : ""
+}
+${
+  needsIDPs
+    ? `,
+idp_agg AS (
+  SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(population) AS idp_population
+  FROM read_parquet('${idpUrl}')
+  WHERE 1=1 ${filterClause}
+  GROUP BY code, year
+)`
+    : ""
+}
+${
+  needsPoverty
+    ? `,
+poverty_agg AS (
+  SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         headcount_ratio, mpi
+  FROM read_parquet('${povertyUrl}')
+  WHERE 1=1 ${filterClause}
+)`
+    : ""
+}
+${
+  needsRisk
+    ? `,
+risk_agg AS (
+  SELECT location_code AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         risk_class, overall_risk
+  FROM read_parquet('${riskUrl}')
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY location_code ORDER BY reference_period_start DESC) = 1
+)`
+    : ""
+}
+${
+  needsFunding
+    ? `,
+funding_agg AS (
+  SELECT location_code AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(requirements_usd) AS req,
+         SUM(funding_usd) AS funded
+  FROM read_parquet('${fundingUrl}')
+  GROUP BY code, year
+)`
+    : ""
+}
+,
+xy_keys AS (
+  SELECT code, year FROM ${xCteName}
+  UNION
+  SELECT code, year FROM ${yCteName}
+)
+SELECT
+  k.code,
+  k.year,
+  p.name,
+  p.population,
+  ${varExpr(xId)} AS x,
+  ${varExpr(yId)} AS y,
+  ${varExpr(sizeId)} AS size,
+  ${needsRisk ? "r.risk_class" : "NULL AS risk_class"}
+FROM xy_keys k
+LEFT JOIN pop p USING (code)
+${needsC ? "LEFT JOIN conflict_agg c USING (code, year)" : ""}
+${needsF ? "LEFT JOIN food_agg f USING (code, year)" : ""}
+${needsI ? "LEFT JOIN idp_agg i USING (code, year)" : ""}
+${needsPv ? "LEFT JOIN poverty_agg pv USING (code, year)" : ""}
+${needsRisk ? "LEFT JOIN risk_agg r ON k.code = r.code" : ""}
+${needsFn ? "LEFT JOIN funding_agg fn USING (code, year)" : ""}
+WHERE p.name IS NOT NULL
+  `;
+
+  const result = await conn.query(sql);
   const rows: BubbleRow[] = [];
-  for (const k of allKeys) {
-    const [code, yearStr] = k.split(":");
-    const year = parseInt(yearStr, 10);
-    if (!code || !year) continue;
-    const name = nameMap.get(code);
-    if (!name) continue;
 
+  for (const row of result.toArray()) {
+    const code = String(row.code ?? "");
+    const year = Number(row.year ?? 0);
+    if (!code || !year) continue;
     rows.push({
       code,
-      name,
+      name: String(row.name ?? ""),
       year,
-      x: getVal(xId, k, code),
-      y: getVal(yId, k, code),
-      size: getVal(sizeId, k, code) ?? 0,
-      population: popByCode.get(code),
-      risk_class: riskClassMap.get(code) ?? null,
+      x: row.x == null ? null : Number(row.x),
+      y: row.y == null ? null : Number(row.y),
+      size: row.size == null ? 0 : Number(row.size),
+      population: row.population == null ? undefined : Number(row.population),
+      risk_class: row.risk_class == null ? null : String(row.risk_class),
     });
   }
 
+  cache.set(cacheKey, rows);
   return rows;
 }
