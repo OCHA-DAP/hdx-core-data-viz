@@ -1,0 +1,99 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "coordination-context/conflict-events",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "coordination-context",
+    "start_datetime": "1997-01-01T00:00:00Z",
+    "end_datetime": "2026-03-31T23:59:59Z",
+    "table:row_count": 3036519,
+    "table:columns": [
+      {
+        "name": "location_code",
+        "type": "string"
+      },
+      {
+        "name": "location_name",
+        "type": "string"
+      },
+      {
+        "name": "admin1_code",
+        "type": "string"
+      },
+      {
+        "name": "admin1_name",
+        "type": "string"
+      },
+      {
+        "name": "admin2_code",
+        "type": "string"
+      },
+      {
+        "name": "admin2_name",
+        "type": "string"
+      },
+      {
+        "name": "admin_level",
+        "type": "int64"
+      },
+      {
+        "name": "resource_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "event_type",
+        "type": "string"
+      },
+      {
+        "name": "events",
+        "type": "int64"
+      },
+      {
+        "name": "fatalities",
+        "type": "int64"
+      },
+      {
+        "name": "reference_period_start",
+        "type": "string"
+      },
+      {
+        "name": "reference_period_end",
+        "type": "string"
+      }
+    ],
+    "datetime": null
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/conflict-events.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/conflict-events/",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-coordination-context"
+}

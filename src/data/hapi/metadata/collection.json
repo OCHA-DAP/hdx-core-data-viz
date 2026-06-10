@@ -1,0 +1,124 @@
+{
+  "type": "Collection",
+  "id": "hdx-hapi-metadata",
+  "stac_version": "1.1.0",
+  "description": "HDX HAPI Metadata datasets \u2014 cloud-native Parquet exports.",
+  "links": [
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/metadata/collection.json",
+      "type": "application/json",
+      "title": "Metadata"
+    },
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/metadata/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/admin1.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/admin2.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/currency.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/data-availability.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/dataset.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/location.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/org-type.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/org.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/resource.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/sector.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/wfp-commodity.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/metadata/wfp-market.json",
+      "type": "application/geo+json"
+    }
+  ],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "updated": "2026-06-09T16:52:43.196529+00:00",
+  "item_assets": {
+    "data": {
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ],
+      "title": "Parquet data file"
+    }
+  },
+  "title": "Metadata",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -180,
+          -90,
+          180,
+          90
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "1974-01-01T00:00:00Z",
+          null
+        ]
+      ]
+    }
+  },
+  "license": "CC-BY-4.0"
+}

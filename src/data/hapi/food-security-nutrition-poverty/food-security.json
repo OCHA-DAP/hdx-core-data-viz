@@ -1,0 +1,103 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "food-security-nutrition-poverty/food-security",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "food-security-nutrition-poverty",
+    "start_datetime": "2017-01-01T00:00:00Z",
+    "end_datetime": "2026-09-30T23:59:59Z",
+    "table:row_count": 446571,
+    "table:columns": [
+      {
+        "name": "location_code",
+        "type": "string"
+      },
+      {
+        "name": "location_name",
+        "type": "string"
+      },
+      {
+        "name": "admin1_code",
+        "type": "string"
+      },
+      {
+        "name": "admin1_name",
+        "type": "string"
+      },
+      {
+        "name": "admin2_code",
+        "type": "string"
+      },
+      {
+        "name": "admin2_name",
+        "type": "string"
+      },
+      {
+        "name": "admin_level",
+        "type": "int64"
+      },
+      {
+        "name": "resource_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "ipc_phase",
+        "type": "string"
+      },
+      {
+        "name": "ipc_type",
+        "type": "string"
+      },
+      {
+        "name": "population_in_phase",
+        "type": "int64"
+      },
+      {
+        "name": "population_fraction_in_phase",
+        "type": "double"
+      },
+      {
+        "name": "reference_period_start",
+        "type": "string"
+      },
+      {
+        "name": "reference_period_end",
+        "type": "string"
+      }
+    ],
+    "datetime": null
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-security.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-security/",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-food-security-nutrition-poverty"
+}

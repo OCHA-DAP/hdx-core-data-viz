@@ -1,37 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import QueryBuilder from "../lib/components/QueryBuilder.svelte";
 ---
 
-<Layout title="Explorer — HDX Lens" description="Build custom queries against HAPI humanitarian data.">
-  <header>
-    <h1>Data Explorer</h1>
-    <p class="subtitle">
-      Query 10 HAPI datasets directly from your browser — no downloads, no server. DuckDB-WASM
-      fetches only the Parquet column chunks it needs.
-    </p>
-  </header>
-
-  <div class="section-block">
-    <QueryBuilder client:only="svelte" />
-  </div>
+<Layout title="Explorer">
 </Layout>
-
-<style>
-  header {
-    margin-bottom: 1.25rem;
-  }
-
-  h1 {
-    font-size: 26px;
-    font-weight: 700;
-    margin: 0 0 0.25rem;
-  }
-
-  .subtitle {
-    font-size: 13px;
-    color: #888;
-    margin: 0;
-    max-width: 680px;
-  }
-</style>

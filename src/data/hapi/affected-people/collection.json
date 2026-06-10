@@ -1,0 +1,84 @@
+{
+  "type": "Collection",
+  "id": "hdx-hapi-affected-people",
+  "stac_version": "1.1.0",
+  "description": "HDX HAPI Affected People datasets \u2014 cloud-native Parquet exports.",
+  "links": [
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/collection.json",
+      "type": "application/json",
+      "title": "Affected People"
+    },
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/humanitarian-needs.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/idps.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/refugees-persons-of-concern.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "item",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/returnees.json",
+      "type": "application/geo+json"
+    }
+  ],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "updated": "2026-06-09T16:52:43.196529+00:00",
+  "item_assets": {
+    "data": {
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ],
+      "title": "Parquet data file"
+    }
+  },
+  "title": "Affected People",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -180,
+          -90,
+          180,
+          90
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2001-01-01T00:00:00Z",
+          "2026-12-31T23:59:59Z"
+        ]
+      ]
+    }
+  },
+  "license": "CC-BY-4.0"
+}

@@ -1,0 +1,99 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "affected-people/refugees-persons-of-concern",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "affected-people",
+    "start_datetime": "2001-01-01T00:00:00Z",
+    "end_datetime": "2024-12-31T23:59:59Z",
+    "table:row_count": 2114060,
+    "table:columns": [
+      {
+        "name": "resource_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "population_group",
+        "type": "string"
+      },
+      {
+        "name": "gender",
+        "type": "string"
+      },
+      {
+        "name": "age_range",
+        "type": "string"
+      },
+      {
+        "name": "min_age",
+        "type": "int64"
+      },
+      {
+        "name": "max_age",
+        "type": "int64"
+      },
+      {
+        "name": "population",
+        "type": "int64"
+      },
+      {
+        "name": "reference_period_start",
+        "type": "string"
+      },
+      {
+        "name": "reference_period_end",
+        "type": "string"
+      },
+      {
+        "name": "origin_location_code",
+        "type": "string"
+      },
+      {
+        "name": "origin_location_name",
+        "type": "string"
+      },
+      {
+        "name": "asylum_location_code",
+        "type": "string"
+      },
+      {
+        "name": "asylum_location_name",
+        "type": "string"
+      }
+    ],
+    "datetime": null
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/refugees-persons-of-concern.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/affected-people/refugees-persons-of-concern.parquet",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-affected-people"
+}

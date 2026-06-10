@@ -1,0 +1,117 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "metadata/resource",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "metadata",
+    "table:row_count": 512,
+    "table:columns": [
+      {
+        "name": "resource_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "format",
+        "type": "string"
+      },
+      {
+        "name": "update_date",
+        "type": "string"
+      },
+      {
+        "name": "is_hxl",
+        "type": "bool"
+      },
+      {
+        "name": "download_url",
+        "type": "string"
+      },
+      {
+        "name": "hapi_updated_date",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_stub",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_title",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_provider_stub",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_provider_name",
+        "type": "string"
+      },
+      {
+        "name": "hdx_link",
+        "type": "string"
+      },
+      {
+        "name": "hdx_api_link",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_link",
+        "type": "string"
+      },
+      {
+        "name": "dataset_hdx_api_link",
+        "type": "string"
+      },
+      {
+        "name": "provider_hdx_link",
+        "type": "string"
+      },
+      {
+        "name": "provider_hdx_api_link",
+        "type": "string"
+      }
+    ],
+    "datetime": "2026-06-09T16:52:43.196529Z"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/metadata/resource.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/metadata/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/metadata/resource.parquet",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-metadata"
+}

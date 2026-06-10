@@ -7,7 +7,8 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "sync-stac": "node scripts/sync-stac.js"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
@@ -18,7 +19,8 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@duckdb/duckdb-wasm": "1.33.1-dev55.0",
+    "hyparquet": "^1.26.0",
+    "hyparquet-compressors": "^1.1.1",
     "vega": "^6.2.0",
     "vega-embed": "^7.1.0",
     "vega-lite": "^6.4.3"

@@ -1,0 +1,85 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "metadata/data-availability",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "metadata",
+    "table:row_count": 46750,
+    "table:columns": [
+      {
+        "name": "location_code",
+        "type": "string"
+      },
+      {
+        "name": "location_name",
+        "type": "string"
+      },
+      {
+        "name": "admin1_code",
+        "type": "string"
+      },
+      {
+        "name": "admin1_name",
+        "type": "string"
+      },
+      {
+        "name": "admin2_code",
+        "type": "string"
+      },
+      {
+        "name": "admin2_name",
+        "type": "string"
+      },
+      {
+        "name": "admin_level",
+        "type": "int64"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "subcategory",
+        "type": "string"
+      },
+      {
+        "name": "hapi_updated_date",
+        "type": "string"
+      }
+    ],
+    "datetime": "2026-06-09T16:52:43.196529Z"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/metadata/data-availability.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/metadata/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/metadata/data-availability/",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-metadata"
+}

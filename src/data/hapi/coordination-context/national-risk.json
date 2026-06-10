@@ -1,0 +1,99 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "id": "coordination-context/national-risk",
+  "geometry": null,
+  "properties": {
+    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "theme": "coordination-context",
+    "start_datetime": "2024-01-01T00:00:00Z",
+    "end_datetime": "2024-12-31T23:59:59.999999Z",
+    "table:row_count": 191,
+    "table:columns": [
+      {
+        "name": "risk_class",
+        "type": "string"
+      },
+      {
+        "name": "global_rank",
+        "type": "int64"
+      },
+      {
+        "name": "overall_risk",
+        "type": "double"
+      },
+      {
+        "name": "hazard_exposure_risk",
+        "type": "double"
+      },
+      {
+        "name": "vulnerability_risk",
+        "type": "double"
+      },
+      {
+        "name": "coping_capacity_risk",
+        "type": "double"
+      },
+      {
+        "name": "meta_missing_indicators_pct",
+        "type": "double"
+      },
+      {
+        "name": "meta_avg_recentness_years",
+        "type": "double"
+      },
+      {
+        "name": "reference_period_start",
+        "type": "string"
+      },
+      {
+        "name": "reference_period_end",
+        "type": "string"
+      },
+      {
+        "name": "resource_hdx_id",
+        "type": "string"
+      },
+      {
+        "name": "location_code",
+        "type": "string"
+      },
+      {
+        "name": "location_name",
+        "type": "string"
+      }
+    ],
+    "datetime": null
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/national-risk.json",
+      "type": "application/geo+json"
+    },
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "collection",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/national-risk.parquet",
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "collection": "hdx-hapi-coordination-context"
+}

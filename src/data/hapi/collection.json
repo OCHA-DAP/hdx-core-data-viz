@@ -1,0 +1,128 @@
+{
+  "type": "Collection",
+  "id": "hdx-hapi",
+  "stac_version": "1.1.0",
+  "description": "Cloud-native Parquet exports of the UN OCHA Humanitarian API (HAPI), which provides standardized humanitarian indicators designed for seamless interoperability from multiple sources. Covers affected people, food security, funding, conflict, operational presence, and more. Individual dataset licenses vary \u2014 see source links.",
+  "links": [
+    {
+      "rel": "root",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json",
+      "title": "HDX HAPI Cloud-Native"
+    },
+    {
+      "rel": "self",
+      "href": "https://data.source.coop/hdx/hapi/collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "license",
+      "href": "https://data.humdata.org/hapi",
+      "type": "text/html",
+      "title": "HDX HAPI \u2014 per-dataset license information"
+    },
+    {
+      "rel": "via",
+      "href": "https://hapi.humdata.org/",
+      "type": "text/html",
+      "title": "HDX Humanitarian API"
+    },
+    {
+      "rel": "describedby",
+      "href": "https://hdx-hapi.readthedocs.io/en/latest/",
+      "type": "text/html",
+      "title": "HDX HAPI documentation"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/affected-people/collection.json",
+      "type": "application/json",
+      "title": "Affected People"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/climate/collection.json",
+      "type": "application/json",
+      "title": "Climate"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/collection.json",
+      "type": "application/json",
+      "title": "Coordination Context"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/collection.json",
+      "type": "application/json",
+      "title": "Food Security, Nutrition & Poverty"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/geography-infrastructure/collection.json",
+      "type": "application/json",
+      "title": "Geography & Infrastructure"
+    },
+    {
+      "rel": "child",
+      "href": "https://data.source.coop/hdx/hapi/metadata/collection.json",
+      "type": "application/json",
+      "title": "Metadata"
+    }
+  ],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "updated": "2026-06-09T16:52:43.196529+00:00",
+  "item_assets": {
+    "data": {
+      "type": "application/vnd.apache.parquet",
+      "roles": [
+        "data"
+      ],
+      "title": "Parquet data file"
+    }
+  },
+  "title": "HDX HAPI Cloud-Native",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -180,
+          -90,
+          180,
+          90
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "1974-01-01T00:00:00Z",
+          "2035-09-30T23:59:59Z"
+        ]
+      ]
+    }
+  },
+  "license": "CC-BY-4.0",
+  "keywords": [
+    "humanitarian",
+    "hapi",
+    "hdx",
+    "hxl",
+    "ocha",
+    "parquet",
+    "cloud-native"
+  ],
+  "providers": [
+    {
+      "name": "UN OCHA HDX Humanitarian API",
+      "description": "The HDX Humanitarian API (HAPI) provides standardized humanitarian indicators from multiple sources to facilitate automated workflows and visualizations supporting humanitarian decision-making.",
+      "roles": [
+        "producer",
+        "processor"
+      ],
+      "url": "https://hapi.humdata.org/"
+    }
+  ]
+}
