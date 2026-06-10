@@ -52,6 +52,21 @@ All partitioned datasets share the same location columns:
 - **Vega / Vega-Lite / vega-embed** — charting (installed, not yet used)
 - **TypeScript** — strict mode
 
+## Testing / running the UI
+
+Use **`playwright-cli`** (installed at `/opt/homebrew/bin/playwright-cli`) to drive the browser for UI verification. It maintains a persistent session so you don't need to re-navigate between commands:
+
+```bash
+playwright-cli open "http://localhost:4323/explore"   # open (dev server must be running)
+playwright-cli snapshot                                # inspect DOM / get element refs
+playwright-cli screenshot --filename /tmp/out.png      # take a screenshot
+playwright-cli click <element-ref>                     # click an element
+playwright-cli eval "<js expression>"                  # run JS in the page
+playwright-cli close                                   # close when done
+```
+
+Start the dev server first: `npm run dev -- --port 4323`
+
 ## Design principle
 
 The data is humanitarian — raw counts without context are misleading. Prefer rates and fractions where available (many datasets already provide them). When showing counts, always contextualize against population.

@@ -1,6 +1,8 @@
 ---
 import Layout from "../layouts/Layout.astro";
+import Explorer from "../components/Explorer.svelte";
 ---
 
-<Layout>
+<Layout title="HDX Lens">
+  <Explorer client:only="svelte" />
 </Layout>
