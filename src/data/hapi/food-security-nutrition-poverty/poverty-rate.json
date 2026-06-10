@@ -1,9 +1,7 @@
 {
   "type": "Feature",
   "stac_version": "1.1.0",
-  "stac_extensions": [
-    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
-  ],
+  "stac_extensions": ["https://stac-extensions.github.io/table/v1.2.0/schema.json"],
   "id": "food-security-nutrition-poverty/poverty-rate",
   "geometry": null,
   "properties": {
@@ -90,9 +88,7 @@
     "data": {
       "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/poverty-rate/",
       "type": "application/vnd.apache.parquet",
-      "roles": [
-        "data"
-      ]
+      "roles": ["data"]
     }
   },
   "collection": "hdx-hapi-food-security-nutrition-poverty"

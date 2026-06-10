@@ -31,38 +31,22 @@
       "type": "application/geo+json"
     }
   ],
-  "stac_extensions": [
-    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
-  ],
+  "stac_extensions": ["https://stac-extensions.github.io/table/v1.2.0/schema.json"],
   "updated": "2026-06-09T16:52:43.196529+00:00",
   "item_assets": {
     "data": {
       "type": "application/vnd.apache.parquet",
-      "roles": [
-        "data"
-      ],
+      "roles": ["data"],
       "title": "Parquet data file"
     }
   },
   "title": "Climate",
   "extent": {
     "spatial": {
-      "bbox": [
-        [
-          -180,
-          -90,
-          180,
-          90
-        ]
-      ]
+      "bbox": [[-180, -90, 180, 90]]
     },
     "temporal": {
-      "interval": [
-        [
-          "2022-01-01T00:00:00Z",
-          "2026-03-31T23:59:59Z"
-        ]
-      ]
+      "interval": [["2022-01-01T00:00:00Z", "2026-03-31T23:59:59Z"]]
     }
   },
   "license": "CC-BY-4.0"

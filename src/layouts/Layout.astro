@@ -18,8 +18,8 @@ const { title = "HDX" } = Astro.props;
         --text: #1a1a1a;
         --text-muted: #666;
         --text-sep: #bbb;
-        --hover-bg: rgba(0,0,0,0.06);
-        --spinner-track: rgba(0,0,0,0.1);
+        --hover-bg: rgba(0, 0, 0, 0.06);
+        --spinner-track: rgba(0, 0, 0, 0.1);
         --error-text: #c0392b;
       }
       :root[data-theme="dark"] {
@@ -27,12 +27,17 @@ const { title = "HDX" } = Astro.props;
         --text: #e0e0e0;
         --text-muted: #888;
         --text-sep: #555;
-        --hover-bg: rgba(255,255,255,0.08);
-        --spinner-track: rgba(255,255,255,0.1);
+        --hover-bg: rgba(255, 255, 255, 0.08);
+        --spinner-track: rgba(255, 255, 255, 0.1);
         --error-text: #f46d43;
       }
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body {
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
         margin: 0;
         padding: 0;
         width: 100%;

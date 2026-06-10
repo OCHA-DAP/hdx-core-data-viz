@@ -70,58 +70,31 @@
       "title": "Metadata"
     }
   ],
-  "stac_extensions": [
-    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
-  ],
+  "stac_extensions": ["https://stac-extensions.github.io/table/v1.2.0/schema.json"],
   "updated": "2026-06-09T16:52:43.196529+00:00",
   "item_assets": {
     "data": {
       "type": "application/vnd.apache.parquet",
-      "roles": [
-        "data"
-      ],
+      "roles": ["data"],
       "title": "Parquet data file"
     }
   },
   "title": "HDX HAPI Cloud-Native",
   "extent": {
     "spatial": {
-      "bbox": [
-        [
-          -180,
-          -90,
-          180,
-          90
-        ]
-      ]
+      "bbox": [[-180, -90, 180, 90]]
     },
     "temporal": {
-      "interval": [
-        [
-          "1974-01-01T00:00:00Z",
-          "2035-09-30T23:59:59Z"
-        ]
-      ]
+      "interval": [["1974-01-01T00:00:00Z", "2035-09-30T23:59:59Z"]]
     }
   },
   "license": "CC-BY-4.0",
-  "keywords": [
-    "humanitarian",
-    "hapi",
-    "hdx",
-    "hxl",
-    "ocha",
-    "parquet",
-    "cloud-native"
-  ],
+  "keywords": ["humanitarian", "hapi", "hdx", "hxl", "ocha", "parquet", "cloud-native"],
   "providers": [
     {
       "name": "UN OCHA HDX Humanitarian API",
       "description": "The HDX Humanitarian API (HAPI) provides standardized humanitarian indicators from multiple sources to facilitate automated workflows and visualizations supporting humanitarian decision-making.",
-      "roles": [
-        "producer",
-        "processor"
-      ],
+      "roles": ["producer", "processor"],
       "url": "https://hapi.humdata.org/"
     }
   ]
