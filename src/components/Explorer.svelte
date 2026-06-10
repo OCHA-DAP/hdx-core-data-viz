@@ -25,11 +25,6 @@
     return [...s].sort((a, b) => a - b)
   })
 
-  const filteredData = $derived.by(() => {
-    if (!selectedYear || data.length === 0) return data
-    return data.filter(r => r.year === selectedYear)
-  })
-
   const crumbs = $derived.by(() => {
     const items: { label: string; target: AdminLevel }[] = [{ label: 'World', target: 0 }]
     if (countryName && level >= 1) items.push({ label: countryName, target: 1 })
@@ -151,7 +146,7 @@
         <p>No data available for this region.</p>
       </div>
     {:else}
-      <BubbleChart data={filteredData} {level} {theme} {noDataCodes} onselect={onSelect} />
+      <BubbleChart {data} year={selectedYear} {level} {theme} {noDataCodes} onselect={onSelect} />
       {#if level < 2}
         <p class="hint">
           {#if noDataCodes.size > 0}

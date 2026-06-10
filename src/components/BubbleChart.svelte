@@ -1,185 +1,191 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
-  import embed from 'vega-embed'
+  import { onDestroy, untrack } from 'svelte'
+  import * as echarts from 'echarts'
   import type { BubbleRow } from '../lib/hapi.js'
 
   interface Props {
     data: BubbleRow[]
+    year: number
     level: 0 | 1 | 2
     theme: 'dark' | 'light'
     noDataCodes: Set<string>
     onselect: (code: string, name: string) => void
   }
 
-  let { data, level, theme, noDataCodes, onselect }: Props = $props()
+  let { data, year, level, theme, noDataCodes, onselect }: Props = $props()
 
   let el: HTMLDivElement | undefined = $state()
-  let currentView: any = undefined
+  let chart: echarts.ECharts | undefined
 
-  // risk_class is stored as "1"–"5" in HAPI (1=Very Low … 5=Very High)
-  const RISK_DOMAIN = ['5', '4', '3', '2', '1']
-  const RISK_RANGE  = ['#d73027', '#f46d43', '#fdae61', '#74add1', '#4575b4']
-
-  interface ThemeColors {
-    grid: string
-    label: string
-    title: string
-    domain: string
-    tick: string
-    markStroke: string
-    legendLabel: string
-    legendTitle: string
+  const RISK_COLORS: Record<string, string> = {
+    '5': '#d73027', '4': '#f46d43', '3': '#fdae61', '2': '#74add1', '1': '#4575b4',
+  }
+  const RISK_LABELS: Record<string, string> = {
+    '5': 'Very High', '4': 'High', '3': 'Medium', '2': 'Low', '1': 'Very Low',
   }
 
-  function colors(t: 'dark' | 'light'): ThemeColors {
-    return t === 'dark'
-      ? {
-          grid: 'rgba(255,255,255,0.08)',
-          label: '#888',
-          title: '#aaa',
-          domain: 'rgba(255,255,255,0.2)',
-          tick: 'rgba(255,255,255,0.2)',
-          markStroke: 'rgba(255,255,255,0.15)',
-          legendLabel: '#aaa',
-          legendTitle: '#aaa',
-        }
-      : {
-          grid: 'rgba(0,0,0,0.08)',
-          label: '#555',
-          title: '#333',
-          domain: 'rgba(0,0,0,0.15)',
-          tick: 'rgba(0,0,0,0.15)',
-          markStroke: 'rgba(0,0,0,0.1)',
-          legendLabel: '#555',
-          legendTitle: '#333',
-        }
+  // Symlog approximation for x >= 0: maps 0 → 0, spreads large values logarithmically
+  function symlog(x: number | null | undefined): number {
+    return Math.log1p(x ?? 0)
+  }
+  function symexp(y: number): number {
+    return Math.expm1(y)
   }
 
-  function buildSpec(rows: BubbleRow[], t: 'dark' | 'light') {
-    const c = colors(t)
+  // Map idp_population to symbol diameter (px), matching Vega area scale [80, 4000]
+  const MAX_IDP = 30_000_000
+  function sizeOf(pop: number | null | undefined): number {
+    const area = pop ? 80 + (4000 - 80) * Math.min(pop / MAX_IDP, 1) : 80
+    return 2 * Math.sqrt(area / Math.PI)
+  }
 
-    const axisConfig = {
-      grid: true,
-      gridColor: c.grid,
-      labelColor: c.label,
-      titleColor: c.title,
-      domainColor: c.domain,
-      tickColor: c.tick,
-    }
+  function makeSeriesData(rows: BubbleRow[], lv: number, ndc: Set<string>) {
+    return rows.map(r => {
+      const drillable = lv >= 2 || !ndc.has(r.code)
+      return {
+        id: r.code,
+        name: r.name,
+        value: [symlog(r.fatalities_per_100k), r.ipc_phase3_fraction ?? 0],
+        symbolSize: sizeOf(r.idp_population),
+        itemStyle: {
+          color: lv === 0 ? (RISK_COLORS[r.risk_class ?? ''] ?? '#f46d43') : '#f46d43',
+          opacity: drillable ? 0.8 : 0.18,
+          borderColor: 'rgba(0,0,0,0.12)',
+          borderWidth: 1,
+        },
+        // stashed for click handler and tooltip
+        code: r.code,
+        drillable,
+        raw: r,
+      }
+    })
+  }
 
-    const colorEncoding =
-      level === 0
-        ? {
-            field: 'risk_class',
-            type: 'nominal' as const,
-            scale: { domain: RISK_DOMAIN, range: RISK_RANGE },
-            legend: {
-              title: 'Risk class',
-              labelColor: c.legendLabel,
-              titleColor: c.legendTitle,
-              symbolStrokeWidth: 0,
-              labelExpr: `{'5':'Very High','4':'High','3':'Medium','2':'Low','1':'Very Low'}[datum.label] || datum.label`,
-            },
-          }
-        : { value: '#f46d43' }
+  function buildOption(rows: BubbleRow[], t: 'dark' | 'light', lv: number, ndc: Set<string>) {
+    const isDark = t === 'dark'
+    const textColor   = isDark ? '#888' : '#555'
+    const titleColor  = isDark ? '#aaa' : '#333'
+    const gridColor   = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'
+    const tooltipBg   = isDark ? '#1e1e2e' : '#fff'
+    const tooltipBorder = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'
 
     return {
-      $schema: 'https://vega.github.io/schema/vega-lite/v6.json',
-      width: 'container' as const,
-      height: 'container' as const,
-      background: 'transparent',
-      autosize: { type: 'fit' as const, contains: 'padding' as const },
-      padding: { top: 20, right: 20, bottom: 60, left: 60 },
-      data: { values: rows },
-      mark: {
-        type: 'circle' as const,
-        stroke: c.markStroke,
-        strokeWidth: 1,
-      },
-      encoding: {
-        x: {
-          field: 'fatalities_per_100k',
-          type: 'quantitative' as const,
-          scale: { type: 'symlog' as const, constant: 1 },
-          axis: { title: 'Conflict fatalities per 100K population', ...axisConfig },
-        },
-        y: {
-          field: 'ipc_phase3_fraction',
-          type: 'quantitative' as const,
-          scale: { domain: [0, 1] },
-          axis: { title: 'Population in IPC Phase 3+ food crisis', format: '.0%', ...axisConfig },
-        },
-        size: {
-          field: 'idp_population',
-          type: 'quantitative' as const,
-          scale: { range: [80, 4000], zero: true },
-          legend: {
-            title: 'IDP population',
-            labelColor: c.legendLabel,
-            titleColor: c.legendTitle,
+      animation: false,
+      animationDurationUpdate: 700,
+      animationEasingUpdate: 'cubicInOut' as const,
+      backgroundColor: 'transparent',
+      grid: { top: 20, right: 20, bottom: 64, left: 76 },
+      xAxis: {
+        type: 'value' as const,
+        name: 'Conflict fatalities per 100K population',
+        nameLocation: 'middle' as const,
+        nameGap: 44,
+        nameTextStyle: { color: titleColor, fontSize: 12 },
+        axisLabel: {
+          color: textColor,
+          fontSize: 11,
+          formatter: (v: number) => {
+            const orig = symexp(v)
+            if (orig < 0.1) return '0'
+            if (orig < 10)  return orig.toFixed(1)
+            return Math.round(orig).toLocaleString()
           },
         },
-        opacity: {
-          condition: { test: 'datum.drillable !== false', value: 0.8 },
-          value: 0.18,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: gridColor } },
+      },
+      yAxis: {
+        type: 'value' as const,
+        name: 'Population in IPC Phase 3+ food crisis',
+        nameLocation: 'middle' as const,
+        nameGap: 52,
+        nameTextStyle: { color: titleColor, fontSize: 12 },
+        min: 0,
+        max: 1,
+        axisLabel: {
+          color: textColor,
+          fontSize: 11,
+          formatter: (v: number) => Math.round(v * 100) + '%',
         },
-        color: colorEncoding,
-        tooltip: [
-          { field: 'name', title: 'Location' },
-          { field: 'year', title: 'Year' },
-          { field: 'fatalities_per_100k', title: 'Fatalities per 100K', format: '.1f' },
-          { field: 'ipc_phase3_fraction', title: 'IPC Phase 3+', format: '.1%' },
-          { field: 'idp_population', title: 'IDPs', format: ',d' },
-          ...(level === 0 ? [{ field: 'risk_class', title: 'Risk class' }] : []),
-          ...(level < 2 ? [{ field: 'drillHint', title: 'Sub-region data' }] : []),
-        ],
+        axisLine: { show: false },
+        axisTick: { show: false },
+        splitLine: { lineStyle: { color: gridColor } },
       },
-      config: {
-        view: { stroke: 'transparent' },
-        background: 'transparent',
-        font: 'system-ui, sans-serif',
-        range: { category: RISK_RANGE },
+      tooltip: {
+        trigger: 'item' as const,
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: isDark ? '#ddd' : '#333', fontSize: 12 },
+        formatter: (params: any) => {
+          const r = params.data.raw as BubbleRow
+          const lines = [
+            `<b>${r.name}</b>`,
+            `Year: ${r.year ?? '—'}`,
+            `Fatalities per 100K: ${r.fatalities_per_100k != null ? r.fatalities_per_100k.toFixed(1) : '—'}`,
+            `IPC Phase 3+: ${r.ipc_phase3_fraction != null ? (r.ipc_phase3_fraction * 100).toFixed(1) + '%' : '—'}`,
+            `IDPs: ${r.idp_population != null ? r.idp_population.toLocaleString() : '—'}`,
+          ]
+          if (lv === 0 && r.risk_class) lines.push(`Risk class: ${RISK_LABELS[r.risk_class] ?? r.risk_class}`)
+          if (lv < 2) lines.push(`Sub-region data: ${params.data.drillable ? 'Available' : 'No data at this level'}`)
+          return lines.join('<br/>')
+        },
       },
+      series: [{
+        id: 'bubbles',
+        type: 'scatter' as const,
+        data: makeSeriesData(rows, lv, ndc),
+        cursor: lv < 2 ? 'pointer' : 'default',
+        emphasis: { scale: 1.15 },
+      }],
     }
   }
 
+  // Effect 1: full rebuild on structural changes (data, level, theme, noDataCodes).
+  // Year is read via untrack so this never re-runs when only the year changes.
   $effect(() => {
     if (!el) return
-    const lv = level
     const t = theme
-    // Annotate rows with drillability (reads noDataCodes, adding it as a dependency)
-    const snapshot = data.map(r => ({
-      ...r,
-      drillable: lv >= 2 || !noDataCodes.has(r.code),
-      drillHint: lv < 2
-        ? (noDataCodes.has(r.code) ? 'No data at this level' : 'Available')
-        : undefined,
-    }))
-    let alive = true
+    const lv = level
+    const ndc = new Set(noDataCodes)
+    const yr = untrack(() => year)
+    const rows = data.filter(r => r.year === yr)
 
-    const spec = buildSpec(snapshot, t)
+    if (!chart) {
+      chart = echarts.init(el, null, { renderer: 'canvas' })
+      const ro = new ResizeObserver(() => chart?.resize())
+      ro.observe(el)
 
-    embed(el, spec, { actions: false, renderer: 'canvas' }).then(result => {
-      if (!alive) {
-        result.view.finalize()
-        return
-      }
-      currentView?.finalize()
-      currentView = result.view
-
-      result.view.addEventListener('click', (_event: unknown, item: any) => {
-        if (item?.datum?.code && lv < 2 && item.datum.drillable !== false) {
-          onselect(item.datum.code, item.datum.name)
+      chart.on('click', (params: any) => {
+        const lv2 = untrack(() => level)
+        if (params.data?.code && lv2 < 2 && params.data?.drillable) {
+          onselect(params.data.code, params.data.name)
         }
       })
-    })
-
-    return () => {
-      alive = false
     }
+
+    chart.setOption(buildOption(rows, t, lv, ndc), { notMerge: true })
   })
 
-  onDestroy(() => currentView?.finalize())
+  // Effect 2: animate year changes — only tracks `year`.
+  // Everything else is read via untrack so structural changes don't trigger this.
+  $effect(() => {
+    const yr = year
+    if (!chart) return
+    const lv  = untrack(() => level)
+    const ndc = new Set(untrack(() => noDataCodes))
+    const rows = untrack(() => data).filter(r => r.year === yr)
+
+    chart.setOption({
+      animation: true,
+      series: [{ id: 'bubbles', data: makeSeriesData(rows, lv, ndc) }],
+    })
+  })
+
+  onDestroy(() => {
+    chart?.dispose()
+    chart = undefined
+  })
 </script>
 
 <div bind:this={el} class="chart"></div>
