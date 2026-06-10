@@ -10,12 +10,25 @@
   let theme: 'dark' | 'light' = $state('light')
 
   let data: BubbleRow[] = $state([])
+  let selectedYear: number = $state(0)
   let loading = $state(true)
   let error: string | null = $state(null)
   let noDataCodes: Set<string> = $state(new Set())
   let toastMessage: string | null = $state(null)
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   let wasDrillAttempt = false
+
+  const years = $derived.by(() => {
+    const s = new Set(
+      data.filter(r => r.ipc_phase3_fraction != null).map(r => r.year).filter(Boolean)
+    )
+    return [...s].sort((a, b) => a - b)
+  })
+
+  const filteredData = $derived.by(() => {
+    if (!selectedYear || data.length === 0) return data
+    return data.filter(r => r.year === selectedYear)
+  })
 
   const crumbs = $derived.by(() => {
     const items: { label: string; target: AdminLevel }[] = [{ label: 'World', target: 0 }]
@@ -74,6 +87,9 @@
             drillTo((_level - 1) as AdminLevel)
           } else {
             data = rows
+            const rowYears = [...new Set(rows.map(r => r.year).filter(Boolean))].sort((a, b) => a - b)
+            const maxY = rowYears[rowYears.length - 1] ?? 0
+            selectedYear = rowYears.includes(2023) ? 2023 : maxY
             loading = false
           }
         }
@@ -135,7 +151,7 @@
         <p>No data available for this region.</p>
       </div>
     {:else}
-      <BubbleChart {data} {level} {theme} {noDataCodes} onselect={onSelect} />
+      <BubbleChart data={filteredData} {level} {theme} {noDataCodes} onselect={onSelect} />
       {#if level < 2}
         <p class="hint">
           {#if noDataCodes.size > 0}
@@ -150,6 +166,31 @@
       <div class="toast" role="alert">{toastMessage}</div>
     {/if}
   </div>
+
+  {#if !loading && !error && years.length > 1}
+    <div class="year-bar">
+      <span class="year-display">{selectedYear}</span>
+      <div class="slider-track">
+        <span class="year-bound">{years[0]}</span>
+        <input
+          type="range"
+          min={0}
+          max={years.length - 1}
+          step="1"
+          value={years.indexOf(selectedYear)}
+          oninput={(e) => {
+            const idx = parseInt((e.target as HTMLInputElement).value, 10)
+            selectedYear = years[idx] ?? selectedYear
+          }}
+        />
+        <span class="year-bound">{years[years.length - 1]}</span>
+      </div>
+    </div>
+  {:else if !loading && !error && years.length === 1}
+    <div class="year-bar single">
+      <span class="year-display">{years[0]}</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -200,6 +241,88 @@
   .crumb.current {
     color: var(--text);
     cursor: default;
+  }
+
+  .year-bar {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 16px 40px 20px;
+    border-top: 1px solid var(--domain, rgba(0,0,0,0.08));
+  }
+
+  .year-bar.single {
+    padding: 12px 40px 16px;
+  }
+
+  .year-display {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .slider-track {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .year-bound {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .slider-track input[type='range'] {
+    flex: 1;
+    height: 6px;
+    accent-color: #f46d43;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+  }
+
+  .slider-track input[type='range']::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0,0,0,0.12));
+  }
+
+  .slider-track input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #f46d43;
+    margin-top: -8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    transition: transform 0.1s;
+  }
+
+  .slider-track input[type='range']:hover::-webkit-slider-thumb {
+    transform: scale(1.15);
+  }
+
+  .slider-track input[type='range']::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0,0,0,0.12));
+  }
+
+  .slider-track input[type='range']::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #f46d43;
+    border: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   }
 
   .theme-toggle {
@@ -294,7 +417,7 @@
 
   .hint {
     position: absolute;
-    bottom: 70px;
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 12px;
@@ -305,7 +428,7 @@
 
   .toast {
     position: absolute;
-    bottom: 100px;
+    bottom: 48px;
     left: 50%;
     transform: translateX(-50%);
     background: rgba(30, 30, 30, 0.92);

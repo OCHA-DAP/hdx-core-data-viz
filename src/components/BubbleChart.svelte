@@ -57,9 +57,6 @@
 
   function buildSpec(rows: BubbleRow[], t: 'dark' | 'light') {
     const c = colors(t)
-    const minYear = Math.min(...rows.map(r => r.year).filter(Boolean))
-    const maxYear = Math.max(...rows.map(r => r.year).filter(Boolean))
-    const defaultYear = Math.min(maxYear, 2023)
 
     const axisConfig = {
       grid: true,
@@ -94,20 +91,6 @@
       autosize: { type: 'fit' as const, contains: 'padding' as const },
       padding: { top: 20, right: 20, bottom: 60, left: 60 },
       data: { values: rows },
-      params: [
-        {
-          name: 'year',
-          value: defaultYear,
-          bind: {
-            input: 'range',
-            min: minYear || 2017,
-            max: maxYear || 2024,
-            step: 1,
-            name: 'Year: ',
-          },
-        },
-      ],
-      transform: [{ filter: 'datum.year == year' }],
       mark: {
         type: 'circle' as const,
         stroke: c.markStroke,
