@@ -2,7 +2,7 @@
   "type": "Collection",
   "id": "hdx-hapi-food-security-nutrition-poverty",
   "stac_version": "1.1.0",
-  "description": "HDX HAPI Food Security, Nutrition & Poverty datasets \u2014 cloud-native Parquet exports.",
+  "description": "HDX HAPI Food Security, Nutrition & Poverty datasets — cloud-native Parquet exports.",
   "links": [
     {
       "rel": "root",
@@ -27,12 +27,12 @@
     },
     {
       "rel": "item",
-      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-prices-market-monitor.json",
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-security.json",
       "type": "application/geo+json"
     },
     {
       "rel": "item",
-      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-security.json",
+      "href": "https://data.source.coop/hdx/hapi/food-security-nutrition-poverty/food-prices-market-monitor.json",
       "type": "application/geo+json"
     },
     {
@@ -41,22 +41,38 @@
       "type": "application/geo+json"
     }
   ],
-  "stac_extensions": ["https://stac-extensions.github.io/table/v1.2.0/schema.json"],
-  "updated": "2026-06-09T16:52:43.196529+00:00",
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
+  "updated": "2026-06-10T18:17:30.754672+00:00",
   "item_assets": {
     "data": {
       "type": "application/vnd.apache.parquet",
-      "roles": ["data"],
+      "roles": [
+        "data"
+      ],
       "title": "Parquet data file"
     }
   },
   "title": "Food Security, Nutrition & Poverty",
   "extent": {
     "spatial": {
-      "bbox": [[-180, -90, 180, 90]]
+      "bbox": [
+        [
+          -180,
+          -90,
+          180,
+          90
+        ]
+      ]
     },
     "temporal": {
-      "interval": [["2001-01-01T00:00:00Z", "2026-09-30T23:59:59Z"]]
+      "interval": [
+        [
+          "2001-01-01T00:00:00Z",
+          "2026-09-30T23:59:59Z"
+        ]
+      ]
     }
   },
   "license": "CC-BY-4.0"

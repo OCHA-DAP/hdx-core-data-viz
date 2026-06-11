@@ -1,59 +1,66 @@
 #!/usr/bin/env node
 // Downloads STAC collection and item JSONs from Source Cooperative into src/data/hapi/,
-// mirroring the remote folder structure.
+// mirroring the remote folder structure. Crawls the STAC link graph dynamically —
+// no hard-coded file list needed. Removes local files no longer present on the remote.
 
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, rmSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const ROOT = "https://data.source.coop/hdx/hapi";
 const OUT = join(fileURLToPath(import.meta.url), "../../src/data/hapi");
 
-const FILES = [
-  "collection.json",
-  "affected-people/collection.json",
-  "affected-people/humanitarian-needs.json",
-  "affected-people/idps.json",
-  "affected-people/refugees-persons-of-concern.json",
-  "affected-people/returnees.json",
-  "climate/collection.json",
-  "climate/rainfall.json",
-  "coordination-context/collection.json",
-  "coordination-context/conflict-events.json",
-  "coordination-context/funding.json",
-  "coordination-context/national-risk.json",
-  "coordination-context/operational-presence.json",
-  "food-security-nutrition-poverty/collection.json",
-  "food-security-nutrition-poverty/food-prices-market-monitor.json",
-  "food-security-nutrition-poverty/food-security.json",
-  "food-security-nutrition-poverty/poverty-rate.json",
-  "geography-infrastructure/collection.json",
-  "geography-infrastructure/baseline-population.json",
-  "metadata/collection.json",
-  "metadata/admin1.json",
-  "metadata/admin2.json",
-  "metadata/currency.json",
-  "metadata/data-availability.json",
-  "metadata/dataset.json",
-  "metadata/location.json",
-  "metadata/org-type.json",
-  "metadata/org.json",
-  "metadata/resource.json",
-  "metadata/sector.json",
-  "metadata/wfp-commodity.json",
-  "metadata/wfp-market.json",
-];
-
-for (const file of FILES) {
-  const url = `${ROOT}/${file}`;
-  const dest = join(OUT, file);
-  mkdirSync(dirname(dest), { recursive: true });
+async function fetchJson(url) {
   const res = await fetch(url);
-  if (!res.ok) {
-    console.error(`FAIL ${file} (${res.status})`);
-    continue;
-  }
-  const json = await res.json();
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+const saved = new Set();
+
+function save(url, json) {
+  const path = url.slice(ROOT.length + 1);
+  const dest = join(OUT, path);
+  mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, JSON.stringify(json, null, 2));
-  console.log(`ok   ${file}`);
+  saved.add(dest);
+  console.log(`ok   ${path}`);
+}
+
+function* walk(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walk(full);
+    else if (entry.name.endsWith(".json")) yield full;
+  }
+}
+
+function linksOf(json, rel) {
+  return (json.links ?? []).filter((l) => l.rel === rel).map((l) => l.href);
+}
+
+const root = await fetchJson(`${ROOT}/collection.json`);
+save(`${ROOT}/collection.json`, root);
+
+for (const childUrl of linksOf(root, "child")) {
+  const child = await fetchJson(childUrl);
+  save(childUrl, child);
+
+  for (const itemUrl of linksOf(child, "item")) {
+    let item;
+    try {
+      item = await fetchJson(itemUrl);
+    } catch (e) {
+      console.error(`FAIL ${itemUrl} (${e instanceof Error ? e.message : e})`);
+      continue;
+    }
+    save(itemUrl, item);
+  }
+}
+
+for (const file of walk(OUT)) {
+  if (!saved.has(file)) {
+    rmSync(file);
+    console.log(`del  ${file.slice(OUT.length + 1)}`);
+  }
 }

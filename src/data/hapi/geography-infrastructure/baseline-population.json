@@ -1,11 +1,13 @@
 {
   "type": "Feature",
   "stac_version": "1.1.0",
-  "stac_extensions": ["https://stac-extensions.github.io/table/v1.2.0/schema.json"],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/table/v1.2.0/schema.json"
+  ],
   "id": "geography-infrastructure/baseline-population",
   "geometry": null,
   "properties": {
-    "updated": "2026-06-09T16:52:43.196529+00:00",
+    "updated": "2026-06-10T18:17:30.754672+00:00",
     "theme": "geography-infrastructure",
     "start_datetime": "2001-01-01T00:00:00Z",
     "end_datetime": "2025-12-31T23:59:59Z",
@@ -96,7 +98,9 @@
     "data": {
       "href": "https://data.source.coop/hdx/hapi/geography-infrastructure/baseline-population/",
       "type": "application/vnd.apache.parquet",
-      "roles": ["data"]
+      "roles": [
+        "data"
+      ]
     }
   },
   "collection": "hdx-hapi-geography-infrastructure"
