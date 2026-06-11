@@ -147,15 +147,10 @@ function getConn(): Promise<duckdb.AsyncDuckDBConnection> {
     );
     const worker = new Worker(workerUrl);
     URL.revokeObjectURL(workerUrl);
-    const db = new duckdb.AsyncDuckDB(
-      new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING),
-      worker,
-    );
+    const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     const conn = await db.connect();
-    await conn.query(
-      "SET enable_http_metadata_cache=true; SET enable_object_cache=true;",
-    );
+    await conn.query("SET enable_http_metadata_cache=true; SET enable_object_cache=true;");
     return conn;
   })();
   return connPromise;
@@ -168,9 +163,23 @@ getConn();
 
 const cache = new Map<string, BubbleRow[]>();
 
+// ── URL availability cache ────────────────────────────────────────────────────
+
+const missing = new Set<string>();
+
+async function urlExists(url: string): Promise<boolean> {
+  if (missing.has(url)) return false;
+  const res = await fetch(url, { method: "HEAD" });
+  if (!res.ok) missing.add(url);
+  return res.ok;
+}
+
 // ── URL helpers ───────────────────────────────────────────────────────────────
 
-function partUrl(path: string, level: AdminLevel): string {
+function partUrl(path: string, level: AdminLevel, locationCode?: string): string {
+  if (level > 0 && locationCode) {
+    return `${BASE}/${path}/admin_level=${level}/location_code=${locationCode}/part-0.parquet`;
+  }
   return `${BASE}/${path}/admin_level=${level}/part-0.parquet`;
 }
 
@@ -191,8 +200,7 @@ export async function buildBubbleData(
   const codeCol = level === 0 ? "location_code" : level === 1 ? "admin1_code" : "admin2_code";
   const nameCol = level === 0 ? "location_name" : level === 1 ? "admin1_name" : "admin2_name";
   const filterCol = level === 1 ? "location_code" : level === 2 ? "admin1_code" : null;
-  const filterClause =
-    filterCol && parentCode ? `AND ${filterCol} = '${parentCode}'` : "";
+  const filterClause = filterCol && parentCode ? `AND ${filterCol} = '${parentCode}'` : "";
 
   const ids = [xId, yId, sizeId];
   const needsConflict = ids.some((id) => id.startsWith("conflict_"));
@@ -202,13 +210,45 @@ export async function buildBubbleData(
   const needsRisk = level === 0;
   const needsFunding = level === 0 && ids.includes("funding_gap_pct");
 
-  const popUrl = partUrl("geography-infrastructure/baseline-population", level);
-  const conflictUrl = partUrl("coordination-context/conflict-events", level);
-  const foodUrl = partUrl("food-security-nutrition-poverty/food-security", level);
-  const idpUrl = partUrl("affected-people/idps", level);
-  const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level);
+  const popUrl = partUrl("geography-infrastructure/baseline-population", level, parentCode);
+  const conflictUrl = partUrl("coordination-context/conflict-events", level, parentCode);
+  const foodUrl = partUrl("food-security-nutrition-poverty/food-security", level, parentCode);
+  const idpUrl = partUrl("affected-people/idps", level, parentCode);
+  const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level, parentCode);
   const riskUrl = `${BASE}/coordination-context/national-risk.parquet`;
   const fundingUrl = `${BASE}/coordination-context/funding.parquet`;
+
+  // For sub-national levels, not every country has data for every dataset.
+  // Summable datasets (pop, conflict, idps) fall back to admin_level=2 aggregated to
+  // admin_level=1 when a direct admin_level=1 file is missing.
+  // Fraction-based datasets (food, poverty) cannot be safely summed, so they stay empty.
+  const popFbUrl =
+    level === 1 ? partUrl("geography-infrastructure/baseline-population", 2, parentCode) : null;
+  const conflictFbUrl =
+    level === 1 ? partUrl("coordination-context/conflict-events", 2, parentCode) : null;
+  const idpFbUrl = level === 1 ? partUrl("affected-people/idps", 2, parentCode) : null;
+
+  const [popOk, conflictOk, foodOk, idpOk, povertyOk, popFbOk, conflictFbOk, idpFbOk] =
+    level === 0
+      ? [true, true, true, true, true, false, false, false]
+      : await Promise.all([
+          urlExists(popUrl),
+          needsConflict ? urlExists(conflictUrl) : Promise.resolve(false),
+          needsFood ? urlExists(foodUrl) : Promise.resolve(false),
+          needsIDPs ? urlExists(idpUrl) : Promise.resolve(false),
+          needsPoverty ? urlExists(povertyUrl) : Promise.resolve(false),
+          popFbUrl ? urlExists(popFbUrl) : Promise.resolve(false),
+          conflictFbUrl && needsConflict ? urlExists(conflictFbUrl) : Promise.resolve(false),
+          idpFbUrl && needsIDPs ? urlExists(idpFbUrl) : Promise.resolve(false),
+        ]);
+
+  const popIsAdmin2 = !popOk && popFbOk;
+  const effectivePopUrl = popOk ? popUrl : popFbOk ? popFbUrl! : null;
+  const effectiveConflictUrl = conflictOk ? conflictUrl : conflictFbOk ? conflictFbUrl! : null;
+  const effectiveIdpUrl = idpOk ? idpUrl : idpFbOk ? idpFbUrl! : null;
+
+  // Population is the anchor — no pop data at this level means nothing to show.
+  if (level > 0 && effectivePopUrl === null) return [];
 
   // Map each variable id to the CTE name that holds its (code, year) keys
   function xyCte(id: string): string {
@@ -260,21 +300,33 @@ export async function buildBubbleData(
   const sql = `
 WITH
 pop AS (
-  SELECT ${codeCol} AS code, ${nameCol} AS name, population
-  FROM read_parquet('${popUrl}')
+  ${
+    popIsAdmin2
+      ? `SELECT ${codeCol} AS code, ${nameCol} AS name, SUM(population) AS population
+  FROM read_parquet('${effectivePopUrl}', hive_partitioning=true)
   WHERE gender = 'all' AND age_range = 'all' ${filterClause}
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY ${codeCol} ORDER BY reference_period_start DESC) = 1
+  GROUP BY ${codeCol}, ${nameCol}, reference_period_start
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY ${codeCol} ORDER BY reference_period_start DESC) = 1`
+      : `SELECT ${codeCol} AS code, ${nameCol} AS name, population
+  FROM read_parquet('${effectivePopUrl}', hive_partitioning=true)
+  WHERE gender = 'all' AND age_range = 'all' ${filterClause}
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY ${codeCol} ORDER BY reference_period_start DESC) = 1`
+  }
 )
 ${
   needsConflict
     ? `,
 conflict_agg AS (
-  SELECT ${codeCol} AS code,
+  ${
+    effectiveConflictUrl
+      ? `SELECT ${codeCol} AS code,
          CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
          SUM(fatalities) AS fatalities
-  FROM read_parquet('${conflictUrl}')
+  FROM read_parquet('${effectiveConflictUrl}', hive_partitioning=true)
   WHERE 1=1 ${filterClause}
-  GROUP BY code, year
+  GROUP BY code, year`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::BIGINT AS fatalities WHERE FALSE`
+  }
 )`
     : ""
 }
@@ -282,12 +334,16 @@ ${
   needsFood
     ? `,
 food_agg AS (
-  SELECT ${codeCol} AS code,
+  ${
+    foodOk
+      ? `SELECT ${codeCol} AS code,
          CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
          SUM(population_fraction_in_phase) AS ipc_phase3_fraction
-  FROM read_parquet('${foodUrl}')
+  FROM read_parquet('${foodUrl}', hive_partitioning=true)
   WHERE ipc_type = 'current' AND ipc_phase IN ('3','4','5') ${filterClause}
-  GROUP BY code, year
+  GROUP BY code, year`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::DOUBLE AS ipc_phase3_fraction WHERE FALSE`
+  }
 )`
     : ""
 }
@@ -295,12 +351,16 @@ ${
   needsIDPs
     ? `,
 idp_agg AS (
-  SELECT ${codeCol} AS code,
+  ${
+    effectiveIdpUrl
+      ? `SELECT ${codeCol} AS code,
          CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
          SUM(population) AS idp_population
-  FROM read_parquet('${idpUrl}')
+  FROM read_parquet('${effectiveIdpUrl}', hive_partitioning=true)
   WHERE 1=1 ${filterClause}
-  GROUP BY code, year
+  GROUP BY code, year`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::BIGINT AS idp_population WHERE FALSE`
+  }
 )`
     : ""
 }
@@ -308,11 +368,15 @@ ${
   needsPoverty
     ? `,
 poverty_agg AS (
-  SELECT ${codeCol} AS code,
+  ${
+    povertyOk
+      ? `SELECT ${codeCol} AS code,
          CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
          headcount_ratio, mpi
-  FROM read_parquet('${povertyUrl}')
-  WHERE 1=1 ${filterClause}
+  FROM read_parquet('${povertyUrl}', hive_partitioning=true)
+  WHERE 1=1 ${filterClause}`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::DOUBLE AS headcount_ratio, NULL::DOUBLE AS mpi WHERE FALSE`
+  }
 )`
     : ""
 }
