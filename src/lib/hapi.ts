@@ -169,9 +169,17 @@ const missing = new Set<string>();
 
 async function urlExists(url: string): Promise<boolean> {
   if (missing.has(url)) return false;
-  const res = await fetch(url, { method: "HEAD" });
-  if (!res.ok) missing.add(url);
-  return res.ok;
+  // Range-fetch first 4 bytes and verify Parquet magic "PAR1". A plain HEAD
+  // returning 200 isn't enough — empty or corrupt files also return 200.
+  const res = await fetch(url, { headers: { Range: "bytes=0-3" } });
+  if (!res.ok) {
+    missing.add(url);
+    return false;
+  }
+  const b = new Uint8Array(await res.arrayBuffer());
+  const ok = b[0] === 0x50 && b[1] === 0x41 && b[2] === 0x52 && b[3] === 0x31; // PAR1
+  if (!ok) missing.add(url);
+  return ok;
 }
 
 // ── URL helpers ───────────────────────────────────────────────────────────────
