@@ -188,17 +188,20 @@
         {/if}
       {/each}
     </div>
-    <span class="tagline"
-      >Explore humanitarian crisis data across countries and regions <span class="info-icon"
-        >ⓘ<span class="info-tooltip"
-          >HDX Lens is an interactive Gapminder-style explorer for humanitarian crisis data. It
-          draws from OCHA's Humanitarian API (HAPI) to plot countries and regions on axes like
-          conflict fatalities, food insecurity, poverty, and displacement — letting you compare
-          across crises, drill from country to sub-region, and step through years. All data loads
-          directly in the browser; no account or download needed.</span
+    <div class="nav-right">
+      <a href="/availability" class="catalog-link">Data catalog</a>
+      <span class="tagline"
+        >Explore humanitarian crisis data across countries and regions <span class="info-icon"
+          >ⓘ<span class="info-tooltip"
+            >HDX Lens is an interactive Gapminder-style explorer for humanitarian crisis data. It
+            draws from OCHA's Humanitarian API (HAPI) to plot countries and regions on axes like
+            conflict fatalities, food insecurity, poverty, and displacement — letting you compare
+            across crises, drill from country to sub-region, and step through years. All data loads
+            directly in the browser; no account or download needed.</span
+          ></span
         ></span
-      ></span
-    >
+      >
+    </div>
   </nav>
 
   <div class="controls" class:dark={theme === "dark"}>
@@ -391,8 +394,24 @@
     gap: 4px;
   }
 
-  .tagline {
+  .nav-right {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .catalog-link {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .catalog-link:hover {
+    color: var(--text);
+  }
+
+  .tagline {
     font-size: 12px;
     color: var(--text-muted);
     white-space: nowrap;

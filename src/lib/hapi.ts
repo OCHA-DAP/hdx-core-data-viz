@@ -211,6 +211,14 @@ export interface BubbleResult {
   availability: DataAvailability;
 }
 
+export interface AvailabilityRow {
+  locationCode: string;
+  locationName: string;
+  category: string;
+  subcategory: string;
+  latestDate: string;
+}
+
 // ── DuckDB singleton ──────────────────────────────────────────────────────────
 
 let connPromise: Promise<duckdb.AsyncDuckDBConnection> | null = null;
@@ -712,4 +720,42 @@ WHERE p.name IS NOT NULL
   const result: BubbleResult = { rows, availability };
   cache.set(cacheKey, result);
   return result;
+}
+
+// ── Data availability matrix ──────────────────────────────────────────────────
+
+let availabilityCache: AvailabilityRow[] | null = null;
+
+export async function fetchAvailabilityMatrix(): Promise<AvailabilityRow[]> {
+  if (availabilityCache) return availabilityCache;
+
+  const conn = await getConn();
+  const url = `${BASE}/metadata/data-availability/admin_level=0/part-0.parquet`;
+
+  const sql = `
+    SELECT
+      location_code,
+      location_name,
+      category,
+      subcategory,
+      hapi_updated_date AS latest_date
+    FROM read_parquet('${url}', hive_partitioning=false)
+    ORDER BY location_name, category, subcategory
+  `;
+
+  const result = await conn.query(sql);
+  const rows: AvailabilityRow[] = [];
+
+  for (const row of result.toArray()) {
+    rows.push({
+      locationCode: String(row.location_code ?? ""),
+      locationName: String(row.location_name ?? ""),
+      category: String(row.category ?? ""),
+      subcategory: String(row.subcategory ?? ""),
+      latestDate: String(row.latest_date ?? ""),
+    });
+  }
+
+  availabilityCache = rows;
+  return rows;
 }

@@ -6,7 +6,7 @@ A browser-based explorer for HAPI (Humanitarian API) data — humanitarian datas
 
 ## Data source
 
-All data comes from **cloud-native Parquet files hosted on Source Cooperative**, read directly in the browser using `hyparquet`. No backend server. HTTP range requests mean only the columns you ask for get downloaded.
+All data comes from **cloud-native Parquet files hosted on Source Cooperative**, read directly in the browser using **DuckDB-WASM**. No backend server.
 
 - **HAPI docs**: <https://hdx-hapi.readthedocs.io/en/latest/>
 - **Local STAC metadata**: `src/data/hapi/` — mirrors the Source Cooperative folder structure; run `npm run sync-stac` to refresh
@@ -48,7 +48,7 @@ All partitioned datasets share the same location columns:
 
 - **Astro 6** — static site framework, pages in `src/pages/`
 - **Svelte 5** — UI components (runes syntax), `client:only="svelte"` for browser-only
-- **hyparquet** + **hyparquet-compressors** — Parquet reader that works in the browser
+- **@duckdb/duckdb-wasm** — Parquet reader and SQL engine that works in the browser
 - **Vega / Vega-Lite / vega-embed** — charting (installed, not yet used)
 - **TypeScript** — strict mode
 

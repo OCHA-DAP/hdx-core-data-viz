@@ -8,7 +8,9 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "typecheck": "astro check && tsc --noEmit",
     "lint": "prettier --check . && eslint .",
+    "lint:fix": "prettier --write . && eslint . --fix",
     "format": "prettier --write .",
     "sync-stac": "node scripts/sync-stac.js"
   },
