@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { fetchAvailabilityMatrix, type AvailabilityRow } from "../lib/hapi.js";
+  import {
+    fetchAvailabilityMatrix,
+    fetchSubNationalAvailability,
+    type AvailabilityRow,
+  } from "../lib/hapi.js";
 
   const DATASET_LABELS: Record<string, string> = {
     idps: "IDPs",
@@ -28,6 +32,7 @@
 
   let rows: AvailabilityRow[] = $state([]);
   let loading = $state(true);
+  let loadingSubNational = $state(false);
   let error: string | null = $state(null);
   let search = $state("");
   let expandedCode: string | null = $state(null);
@@ -39,9 +44,24 @@
 
   $effect(() => {
     fetchAvailabilityMatrix()
-      .then((r) => {
-        rows = r;
+      .then((level0Rows) => {
+        rows = level0Rows;
         loading = false;
+
+        // Phase 2: check & load sub-national in background
+        const codes = [...new Set(level0Rows.map((r) => r.locationCode))];
+        loadingSubNational = true;
+        Promise.all([
+          fetchSubNationalAvailability(codes, 1),
+          fetchSubNationalAvailability(codes, 2),
+        ])
+          .then(([r1, r2]) => {
+            rows = [...level0Rows, ...r1, ...r2];
+            loadingSubNational = false;
+          })
+          .catch(() => {
+            loadingSubNational = false;
+          });
       })
       .catch((e) => {
         error = String(e);
@@ -49,7 +69,7 @@
       });
   });
 
-  // Unique datasets in stable order (category then subcategory alphabetically)
+  // Unique datasets in stable order
   const datasets = $derived.by(() => {
     const seen = new Map<string, { category: string; subcategory: string }>();
     for (const r of rows) {
@@ -72,25 +92,34 @@
     }
     return [...seen.entries()]
       .map(([code, name]) => ({ code, name }))
-      .filter(({ name, code }) => !q || name.toLowerCase().includes(q) || code.toLowerCase().includes(q))
+      .filter(
+        ({ name, code }) =>
+          !q || name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
+      )
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  // matrix[locationCode][category/subcategory] = latestDate
+  // matrix[locationCode][category/subcategory] = { levels: Set<number>, dates: Map<number,string> }
   const matrix = $derived.by(() => {
-    const m = new Map<string, Map<string, string>>();
+    const m = new Map<string, Map<string, { levels: Set<number>; dates: Map<number, string> }>>();
     for (const r of rows) {
       let inner = m.get(r.locationCode);
       if (!inner) {
         inner = new Map();
         m.set(r.locationCode, inner);
       }
-      inner.set(`${r.category}/${r.subcategory}`, r.latestDate);
+      const key = `${r.category}/${r.subcategory}`;
+      let cell = inner.get(key);
+      if (!cell) {
+        cell = { levels: new Set(), dates: new Map() };
+        inner.set(key, cell);
+      }
+      cell.levels.add(r.adminLevel);
+      if (r.latestDate) cell.dates.set(r.adminLevel, r.latestDate);
     }
     return m;
   });
 
-  // Category groups for column header grouping
   const categoryGroups = $derived.by(() => {
     const groups: { category: string; count: number }[] = [];
     let last = "";
@@ -118,7 +147,10 @@
     </div>
     <div class="header-right">
       {#if !loading && !error}
-        <span class="summary-stat">{totalCountries} countries · {totalDatasets} datasets · {totalEntries.toLocaleString()} coverage entries</span>
+        <span class="summary-stat">
+          {totalCountries} countries · {totalDatasets} datasets · {totalEntries.toLocaleString()} entries
+          {#if loadingSubNational}<span class="sub-loading">· checking sub-national…</span>{/if}
+        </span>
       {/if}
       <input
         class="search-box"
@@ -156,7 +188,9 @@
           <tr class="group-row">
             <th class="country-col sticky-col" rowspan="2">Country</th>
             {#each categoryGroups as g (g.category)}
-              <th class="group-header" colspan={g.count}>{CATEGORY_LABELS[g.category] ?? g.category}</th>
+              <th class="group-header" colspan={g.count}
+                >{CATEGORY_LABELS[g.category] ?? g.category}</th
+              >
             {/each}
           </tr>
           <tr class="dataset-row">
@@ -181,10 +215,34 @@
                 <span class="code-badge">{c.code}</span>
               </td>
               {#each datasets as d (`${d.category}/${d.subcategory}`)}
-                {@const date = countryData?.get(`${d.category}/${d.subcategory}`)}
-                <td class="cell" title={date ? `Updated ${date.slice(0, 10)}` : undefined}>
-                  {#if date}
-                    <span class="check">✓</span>
+                {@const cell = countryData?.get(`${d.category}/${d.subcategory}`)}
+                <td class="cell">
+                  {#if cell}
+                    <span class="dots">
+                      <span
+                        class="dot"
+                        class:filled={cell.levels.has(0)}
+                        title={cell.dates.get(0)
+                          ? `National · updated ${cell.dates.get(0)!.slice(0, 10)}`
+                          : "National"}
+                      ></span>
+                      <span
+                        class="dot"
+                        class:filled={cell.levels.has(1)}
+                        class:pending={loadingSubNational && !cell.levels.has(1)}
+                        title={cell.dates.get(1)
+                          ? `Sub-national · updated ${cell.dates.get(1)!.slice(0, 10)}`
+                          : "Sub-national"}
+                      ></span>
+                      <span
+                        class="dot"
+                        class:filled={cell.levels.has(2)}
+                        class:pending={loadingSubNational && !cell.levels.has(2)}
+                        title={cell.dates.get(2)
+                          ? `District · updated ${cell.dates.get(2)!.slice(0, 10)}`
+                          : "District"}
+                      ></span>
+                    </span>
                   {:else}
                     <span class="no-data">—</span>
                   {/if}
@@ -194,13 +252,25 @@
             {#if expandedCode === c.code}
               <tr class="detail-row">
                 <td class="detail-country sticky-col">
-                  <span class="detail-label">Last updated</span>
+                  <div class="detail-levels">
+                    <span class="dot filled small"></span> National
+                    <span class="dot filled small"></span> Sub-national
+                    <span class="dot filled small"></span> District
+                  </div>
                 </td>
                 {#each datasets as d (`${d.category}/${d.subcategory}`)}
-                  {@const date = countryData?.get(`${d.category}/${d.subcategory}`)}
+                  {@const cell = countryData?.get(`${d.category}/${d.subcategory}`)}
                   <td class="detail-cell">
-                    {#if date}
-                      <span class="detail-date">{date.slice(0, 10)}</span>
+                    {#if cell}
+                      <div class="detail-dates">
+                        {#each [0, 1, 2] as lvl}
+                          {#if cell.dates.has(lvl)}
+                            <span class="detail-date">{cell.dates.get(lvl)!.slice(0, 10)}</span>
+                          {:else}
+                            <span class="detail-date empty">—</span>
+                          {/if}
+                        {/each}
+                      </div>
                     {/if}
                   </td>
                 {/each}
@@ -212,10 +282,18 @@
     </div>
 
     <footer class="legend">
-      <span class="legend-item"><span class="check">✓</span> = national-level data in HAPI catalog</span>
-      <span class="legend-item"><span class="no-data">—</span> = not in catalog</span>
+      <span class="dots">
+        <span class="dot filled"></span>
+        <span class="dot filled"></span>
+        <span class="dot filled"></span>
+      </span>
+      <span>three dots = national / sub-national / district level</span>
       <span class="legend-sep">·</span>
-      <span class="legend-note">Click a row to see last-updated dates · Sub-national coverage varies; use the main explorer to check</span>
+      <span class="dot filled"></span> filled = data present
+      <span class="legend-sep">·</span>
+      <span class="dot"></span> hollow = not in catalog
+      <span class="legend-sep">·</span>
+      <span class="legend-note">hover dots for update date · click row for details</span>
     </footer>
   {/if}
 </div>
@@ -275,6 +353,11 @@
     white-space: nowrap;
   }
 
+  .sub-loading {
+    font-style: italic;
+    opacity: 0.7;
+  }
+
   .search-box {
     padding: 5px 10px;
     border: 1px solid var(--text-sep);
@@ -319,7 +402,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .table-wrap {
@@ -353,7 +438,8 @@
     z-index: 15;
   }
 
-  .group-row th, .dataset-row th {
+  .group-row th,
+  .dataset-row th {
     padding: 6px 8px;
     border-bottom: 1px solid var(--text-sep);
     font-weight: 600;
@@ -389,7 +475,8 @@
     transition: background 0.1s;
   }
 
-  .country-row:hover, .country-row.expanded {
+  .country-row:hover,
+  .country-row.expanded {
     background: var(--hover-bg);
   }
 
@@ -424,10 +511,46 @@
     vertical-align: middle;
   }
 
-  .check {
-    color: #27ae60;
-    font-size: 13px;
-    font-weight: 600;
+  .dots {
+    display: inline-flex;
+    gap: 3px;
+    align-items: center;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-muted);
+    display: inline-block;
+    opacity: 0.3;
+    flex-shrink: 0;
+  }
+
+  .dot.small {
+    width: 6px;
+    height: 6px;
+  }
+
+  .dot.filled {
+    background: #27ae60;
+    border-color: #27ae60;
+    opacity: 0.85;
+  }
+
+  .dot.pending {
+    opacity: 0.15;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 0.15;
+    }
+    50% {
+      opacity: 0.35;
+    }
   }
 
   .no-data {
@@ -445,7 +568,10 @@
     border-right: 1px solid var(--text-sep);
   }
 
-  .detail-label {
+  .detail-levels {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     font-size: 10px;
     color: var(--text-muted);
     font-style: italic;
@@ -453,20 +579,33 @@
 
   .detail-cell {
     text-align: center;
-    padding: 4px 6px 8px;
+    padding: 2px 6px 8px;
     border-left: 1px solid var(--text-sep);
+    vertical-align: top;
+  }
+
+  .detail-dates {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    align-items: center;
   }
 
   .detail-date {
     font-size: 10px;
     color: var(--text-muted);
     font-variant: tabular-nums;
+    line-height: 1.4;
+  }
+
+  .detail-date.empty {
+    opacity: 0.3;
   }
 
   .legend {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     padding: 8px 20px;
     font-size: 11px;
     color: var(--text-muted);
@@ -474,22 +613,15 @@
     flex-shrink: 0;
   }
 
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
   .legend-sep {
     color: var(--text-sep);
   }
 
   .legend-note {
-    color: var(--text-muted);
     font-style: italic;
   }
 
-  /* Theme toggle (copied from Explorer.svelte) */
+  /* Theme toggle */
   .theme-toggle {
     display: flex;
     align-items: center;

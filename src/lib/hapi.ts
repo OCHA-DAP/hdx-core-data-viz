@@ -216,6 +216,7 @@ export interface AvailabilityRow {
   locationName: string;
   category: string;
   subcategory: string;
+  adminLevel: number;
   latestDate: string;
 }
 
@@ -726,36 +727,77 @@ WHERE p.name IS NOT NULL
 
 let availabilityCache: AvailabilityRow[] | null = null;
 
-export async function fetchAvailabilityMatrix(): Promise<AvailabilityRow[]> {
-  if (availabilityCache) return availabilityCache;
+function availUrl(level: number, locationCode?: string): string {
+  if (level === 0) return `${BASE}/metadata/data-availability/admin_level=0/part-0.parquet`;
+  return `${BASE}/metadata/data-availability/admin_level=${level}/location_code=${locationCode}/part-0.parquet`;
+}
 
-  const conn = await getConn();
-  const url = `${BASE}/metadata/data-availability/admin_level=0/part-0.parquet`;
-
-  const sql = `
-    SELECT
-      location_code,
-      location_name,
-      category,
-      subcategory,
-      hapi_updated_date AS latest_date
-    FROM read_parquet('${url}', hive_partitioning=false)
-    ORDER BY location_name, category, subcategory
-  `;
-
-  const result = await conn.query(sql);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseAvailRows(result: any, level: number): AvailabilityRow[] {
   const rows: AvailabilityRow[] = [];
-
   for (const row of result.toArray()) {
     rows.push({
       locationCode: String(row.location_code ?? ""),
       locationName: String(row.location_name ?? ""),
       category: String(row.category ?? ""),
       subcategory: String(row.subcategory ?? ""),
-      latestDate: String(row.latest_date ?? ""),
+      adminLevel: level,
+      latestDate: String(row.hapi_updated_date ?? ""),
     });
   }
+  return rows;
+}
 
+// Returns national-level (admin_level=0) availability rows — fast, one file.
+export async function fetchAvailabilityMatrix(): Promise<AvailabilityRow[]> {
+  if (availabilityCache) return availabilityCache;
+  const conn = await getConn();
+  const sql = `
+    SELECT location_code, location_name, category, subcategory, hapi_updated_date
+    FROM read_parquet('${availUrl(0)}', hive_partitioning=false)
+    ORDER BY location_name, category, subcategory
+  `;
+  const rows = parseAvailRows(await conn.query(sql), 0);
   availabilityCache = rows;
   return rows;
+}
+
+// Checks which of the given country codes have sub-national availability data
+// at the given level, then fetches those files in one UNION ALL query.
+// If a file causes a DuckDB error (some small files fail in WASM over HTTP),
+// the offending code is extracted from the error message and removed, then
+// the query is retried until it succeeds or no valid codes remain.
+export async function fetchSubNationalAvailability(
+  locationCodes: string[],
+  level: 1 | 2,
+): Promise<AvailabilityRow[]> {
+  const existChecks = await Promise.all(
+    locationCodes.map(async (code) => ((await urlExists(availUrl(level, code))) ? code : null)),
+  );
+  let candidates = existChecks.filter(Boolean) as string[];
+  if (candidates.length === 0) return [];
+
+  const conn = await getConn();
+  const buildUnion = (codes: string[]) =>
+    codes
+      .map(
+        (code) =>
+          `SELECT location_code, location_name, category, subcategory, hapi_updated_date FROM read_parquet('${availUrl(level, code)}', hive_partitioning=false)`,
+      )
+      .join(" UNION ALL ");
+
+  for (let attempt = 0; attempt < 20 && candidates.length > 0; attempt++) {
+    try {
+      return parseAvailRows(await conn.query(buildUnion(candidates)), level);
+    } catch (e) {
+      // Extract the bad location code from the URL embedded in the error message
+      const match = String(e).match(/location_code=([A-Z]{2,3})\//);
+      if (match) {
+        candidates = candidates.filter((c) => c !== match[1]);
+      } else {
+        break;
+      }
+    }
+  }
+  return [];
 }
