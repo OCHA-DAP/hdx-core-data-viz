@@ -134,6 +134,21 @@ export interface BubbleRow {
   risk_class?: string | null;
 }
 
+export type DataStatus = "available" | "aggregated" | "unavailable" | "not-needed";
+
+export interface DataAvailability {
+  population: DataStatus;
+  conflict: DataStatus;
+  food: DataStatus;
+  idps: DataStatus;
+  poverty: DataStatus;
+}
+
+export interface BubbleResult {
+  rows: BubbleRow[];
+  availability: DataAvailability;
+}
+
 // ── DuckDB singleton ──────────────────────────────────────────────────────────
 
 let connPromise: Promise<duckdb.AsyncDuckDBConnection> | null = null;
@@ -161,7 +176,7 @@ getConn();
 
 // ── Result cache ──────────────────────────────────────────────────────────────
 
-const cache = new Map<string, BubbleRow[]>();
+const cache = new Map<string, BubbleResult>();
 
 // ── URL availability cache ────────────────────────────────────────────────────
 
@@ -218,7 +233,7 @@ export async function buildBubbleData(
   xId: string,
   yId: string,
   sizeId: string,
-): Promise<BubbleRow[]> {
+): Promise<BubbleResult> {
   const cacheKey = `${level}|${parentCode ?? ""}|${xId}|${yId}|${sizeId}`;
   if (cache.has(cacheKey)) return cache.get(cacheKey)!;
 
@@ -274,8 +289,49 @@ export async function buildBubbleData(
   const effectiveConflictUrl = conflictOk ? conflictUrl : conflictFbOk ? conflictFbUrl! : null;
   const effectiveIdpUrl = idpOk ? idpUrl : idpFbOk ? idpFbUrl! : null;
 
+  const availability: DataAvailability = {
+    population:
+      level === 0 ? "available" : popOk ? "available" : popIsAdmin2 ? "aggregated" : "unavailable",
+    conflict: !needsConflict
+      ? "not-needed"
+      : level === 0
+        ? "available"
+        : conflictOk
+          ? "available"
+          : conflictFbOk
+            ? "aggregated"
+            : "unavailable",
+    food: !needsFood
+      ? "not-needed"
+      : level === 0
+        ? "available"
+        : foodOk
+          ? "available"
+          : "unavailable",
+    idps: !needsIDPs
+      ? "not-needed"
+      : level === 0
+        ? "available"
+        : idpOk
+          ? "available"
+          : idpFbOk
+            ? "aggregated"
+            : "unavailable",
+    poverty: !needsPoverty
+      ? "not-needed"
+      : level === 0
+        ? "available"
+        : povertyOk
+          ? "available"
+          : "unavailable",
+  };
+
   // Population is the anchor — no pop data at this level means nothing to show.
-  if (level > 0 && effectivePopUrl === null) return [];
+  if (level > 0 && effectivePopUrl === null) {
+    const result: BubbleResult = { rows: [], availability };
+    cache.set(cacheKey, result);
+    return result;
+  }
 
   // Map each variable id to the CTE name that holds its (code, year) keys
   function xyCte(id: string): string {
@@ -458,10 +514,10 @@ ${needsFn ? "LEFT JOIN funding_agg fn USING (code, year)" : ""}
 WHERE p.name IS NOT NULL
   `;
 
-  const result = await conn.query(sql);
+  const queryResult = await conn.query(sql);
   const rows: BubbleRow[] = [];
 
-  for (const row of result.toArray()) {
+  for (const row of queryResult.toArray()) {
     const code = String(row.code ?? "");
     const year = Number(row.year ?? 0);
     if (!code || !year) continue;
@@ -477,6 +533,7 @@ WHERE p.name IS NOT NULL
     });
   }
 
-  cache.set(cacheKey, rows);
-  return rows;
+  const result: BubbleResult = { rows, availability };
+  cache.set(cacheKey, result);
+  return result;
 }

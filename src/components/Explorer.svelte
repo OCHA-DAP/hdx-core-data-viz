@@ -6,6 +6,7 @@
     SIZE_VARS,
     type AdminLevel,
     type BubbleRow,
+    type DataAvailability,
   } from "../lib/hapi.js";
   import BubbleChart from "./BubbleChart.svelte";
 
@@ -29,6 +30,7 @@
   let loading = $state(true);
   let error: string | null = $state(null);
   let noDataCodes: Set<string> = $state(new Set());
+  let dataAvailability: DataAvailability | null = $state(null);
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let wasDrillAttempt = false;
@@ -57,6 +59,27 @@
     if (admin1Name && level >= 2) items.push({ label: admin1Name, target: 2 });
     return items;
   });
+
+  const AVAIL_LABELS: [keyof DataAvailability, string][] = [
+    ["population", "Baseline population"],
+    ["conflict", "Conflict events"],
+    ["food", "Food security (IPC)"],
+    ["idps", "IDPs"],
+    ["poverty", "Poverty rate"],
+  ];
+
+  function availItems(a: DataAvailability) {
+    return AVAIL_LABELS.filter(([k]) => a[k] !== "not-needed").map(([k, label]) => ({
+      label,
+      status: a[k],
+      text:
+        a[k] === "available"
+          ? "✓ available"
+          : a[k] === "aggregated"
+            ? "↑ admin-2 aggregated to admin-1"
+            : "✗ not available",
+    }));
+  }
 
   $effect(() => {
     document.documentElement.dataset.theme = theme;
@@ -114,8 +137,9 @@
     error = null;
 
     buildBubbleData(_level, _parent, _x, _y, _sz)
-      .then((rows) => {
+      .then(({ rows, availability: avail }) => {
         if (!cancelled) {
+          dataAvailability = avail;
           if (rows.length === 0 && _isDrill) {
             const failedName = _level === 1 ? countryName : admin1Name;
             if (_parent) noDataCodes.add(_parent);
@@ -284,9 +308,23 @@
         <p>Failed to load data</p>
         <pre>{error}</pre>
       </div>
-    {:else if data.length === 0}
+    {:else if data.length === 0 || (level > 0 && years.length === 0)}
       <div class="overlay">
-        <p>No data available for this region.</p>
+        {#if level > 0 && dataAvailability}
+          <p class="no-data-title">
+            No sub-national data for {level === 1 ? countryName : admin1Name}
+          </p>
+          <div class="avail-list">
+            {#each availItems(dataAvailability) as item (item.label)}
+              <div class="avail-row">
+                <span class="avail-label">{item.label}</span>
+                <span class="avail-badge avail-{item.status}">{item.text}</span>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p>No data available for this region.</p>
+        {/if}
       </div>
     {:else}
       <BubbleChart
@@ -614,6 +652,53 @@
     gap: 12px;
     color: var(--text-muted);
     font-size: 14px;
+  }
+
+  .no-data-title {
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  .avail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 280px;
+  }
+
+  .avail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12px;
+  }
+
+  .avail-label {
+    color: var(--text-muted);
+  }
+
+  .avail-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+
+  .avail-available {
+    color: #4caf50;
+    background: rgba(76, 175, 80, 0.1);
+  }
+
+  .avail-aggregated {
+    color: #f46d43;
+    background: rgba(244, 109, 67, 0.1);
+  }
+
+  .avail-unavailable {
+    color: var(--text-sep);
+    background: rgba(0, 0, 0, 0.05);
   }
 
   .overlay.error pre {
