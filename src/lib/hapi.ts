@@ -183,6 +183,25 @@ function partUrl(path: string, level: AdminLevel, locationCode?: string): string
   return `${BASE}/${path}/admin_level=${level}/part-0.parquet`;
 }
 
+// ── Drillability pre-check ────────────────────────────────────────────────────
+
+// Returns the set of location codes that have no sub-national population data
+// (neither admin_level=1 nor the admin_level=2 fallback). Call this after the
+// level-0 chart loads so bubbles can be faded before the user clicks them.
+export async function fetchNonDrillableCodes(codes: string[]): Promise<Set<string>> {
+  const pop = "geography-infrastructure/baseline-population";
+  const results = await Promise.all(
+    codes.map(async (code) => {
+      const [ok1, ok2] = await Promise.all([
+        urlExists(partUrl(pop, 1, code)),
+        urlExists(partUrl(pop, 2, code)),
+      ]);
+      return [code, ok1 || ok2] as const;
+    }),
+  );
+  return new Set(results.filter(([, ok]) => !ok).map(([code]) => code));
+}
+
 // ── Main query ────────────────────────────────────────────────────────────────
 
 export async function buildBubbleData(

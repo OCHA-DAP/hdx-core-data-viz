@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     buildBubbleData,
+    fetchNonDrillableCodes,
     AXIS_VARS,
     SIZE_VARS,
     type AdminLevel,
@@ -122,6 +123,12 @@
             drillTo((_level - 1) as AdminLevel);
           } else {
             data = rows;
+            if (_level === 0) {
+              const codes = [...new Set(rows.map((r) => r.code))];
+              fetchNonDrillableCodes(codes).then((nd) => {
+                if (!cancelled) noDataCodes = nd;
+              });
+            }
             const rowYears = [
               ...new Set(
                 rows
@@ -174,11 +181,11 @@
     <span class="tagline"
       >Explore humanitarian crisis data across countries and regions <span class="info-icon"
         >ⓘ<span class="info-tooltip"
-          >HDX Lens is an interactive Gapminder-style explorer for humanitarian crisis data. It draws
-          from OCHA's Humanitarian API (HAPI) to plot countries and regions on axes like conflict
-          fatalities, food insecurity, poverty, and displacement — letting you compare across
-          crises, drill from country to sub-region, and step through years. All data loads directly
-          in the browser; no account or download needed.</span
+          >HDX Lens is an interactive Gapminder-style explorer for humanitarian crisis data. It
+          draws from OCHA's Humanitarian API (HAPI) to plot countries and regions on axes like
+          conflict fatalities, food insecurity, poverty, and displacement — letting you compare
+          across crises, drill from country to sub-region, and step through years. All data loads
+          directly in the browser; no account or download needed.</span
         ></span
       ></span
     >
