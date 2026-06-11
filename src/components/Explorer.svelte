@@ -33,7 +33,6 @@
   let dataAvailability: DataAvailability | null = $state(null);
   let toastMessage: string | null = $state(null);
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
-  let wasDrillAttempt = false;
 
   const years = $derived.by(() => {
     const s = new Set(
@@ -99,7 +98,6 @@
   }
 
   function onSelect(code: string, name: string) {
-    wasDrillAttempt = true;
     if (level === 0) {
       // Reset level-0-only variables before drilling in
       if (AXIS_VARS.find((v) => v.id === xVarId)?.levelOnly === 0)
@@ -129,8 +127,6 @@
     const _x = xVarId;
     const _y = yVarId;
     const _sz = sizeVarId;
-    const _isDrill = wasDrillAttempt;
-    wasDrillAttempt = false;
     let cancelled = false;
 
     loading = true;
@@ -140,35 +136,29 @@
       .then(({ rows, availability: avail }) => {
         if (!cancelled) {
           dataAvailability = avail;
-          if (rows.length === 0 && _isDrill) {
-            const failedName = _level === 1 ? countryName : admin1Name;
-            if (_parent) noDataCodes.add(_parent);
-            showToast(`No sub-region data available for ${failedName ?? _parent}`);
-            drillTo((_level - 1) as AdminLevel);
-          } else {
-            data = rows;
-            if (_level === 0) {
-              const codes = [...new Set(rows.map((r) => r.code))];
-              fetchNonDrillableCodes(codes).then((nd) => {
-                if (!cancelled) noDataCodes = nd;
-              });
-            }
-            const rowYears = [
-              ...new Set(
-                rows
-                  .filter((r) => r.x != null && r.y != null)
-                  .map((r) => r.year)
-                  .filter(Boolean),
-              ),
-            ].sort((a, b) => a - b);
-            const maxY = rowYears[rowYears.length - 1] ?? 0;
-            selectedYear = rowYears.includes(selectedYear)
-              ? selectedYear
-              : rowYears.includes(2023)
-                ? 2023
-                : maxY;
-            loading = false;
+          data = rows;
+          if (rows.length === 0 && _parent) noDataCodes.add(_parent);
+          if (_level === 0) {
+            const codes = [...new Set(rows.map((r) => r.code))];
+            fetchNonDrillableCodes(codes).then((nd) => {
+              if (!cancelled) noDataCodes = nd;
+            });
           }
+          const rowYears = [
+            ...new Set(
+              rows
+                .filter((r) => r.x != null && r.y != null)
+                .map((r) => r.year)
+                .filter(Boolean),
+            ),
+          ].sort((a, b) => a - b);
+          const maxY = rowYears[rowYears.length - 1] ?? 0;
+          selectedYear = rowYears.includes(selectedYear)
+            ? selectedYear
+            : rowYears.includes(2023)
+              ? 2023
+              : maxY;
+          loading = false;
         }
       })
       .catch((e) => {
