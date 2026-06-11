@@ -31,8 +31,6 @@
   let error: string | null = $state(null);
   let noDataCodes: Set<string> = $state(new Set());
   let dataAvailability: DataAvailability | null = $state(null);
-  let toastMessage: string | null = $state(null);
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   const years = $derived.by(() => {
     const s = new Set(
@@ -63,8 +61,11 @@
     ["population", "Baseline population"],
     ["conflict", "Conflict events"],
     ["food", "Food security (IPC)"],
+    ["humNeeds", "Humanitarian needs"],
     ["idps", "IDPs"],
     ["poverty", "Poverty rate"],
+    ["rainfall", "Rainfall anomaly"],
+    ["refugees", "Refugees & asylum seekers"],
   ];
 
   function availItems(a: DataAvailability) {
@@ -93,6 +94,9 @@
     if (target < 1) {
       countryCode = undefined;
       countryName = undefined;
+      if (AXIS_VARS.find((v) => v.id === xVarId)?.subNationalOnly)
+        xVarId = "conflict_fatalities_per_100k";
+      if (AXIS_VARS.find((v) => v.id === yVarId)?.subNationalOnly) yVarId = "ipc_phase3_fraction";
     }
     level = target;
   }
@@ -111,14 +115,6 @@
       admin1Name = name;
       level = 2;
     }
-  }
-
-  function showToast(msg: string) {
-    toastMessage = msg;
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toastMessage = null;
-    }, 4000);
   }
 
   $effect(() => {
@@ -215,15 +211,25 @@
         }}
       >
         {#each AXIS_VARS as v (v.id)}
-          <option value={v.id} disabled={v.id === yVarId || (v.levelOnly === 0 && level > 0)}
-            >{v.label}{v.levelOnly === 0 && level > 0 ? " (national only)" : ""}</option
+          <option
+            value={v.id}
+            disabled={v.id === yVarId ||
+              (v.levelOnly === 0 && level > 0) ||
+              (v.subNationalOnly === true && level === 0)}
+            >{v.label}{v.levelOnly === 0 && level > 0
+              ? " (national only)"
+              : v.subNationalOnly && level === 0
+                ? " (sub-national only)"
+                : ""}</option
           >
         {/each}
       </select>
       <div class="var-meta">
         {xSpec.yearNote ?? ""}{xSpec.levelNote ? ` · ${xSpec.levelNote}` : ""}{xSpec.levelOnly === 0
           ? " · national level only"
-          : ""}
+          : xSpec.subNationalOnly
+            ? " · sub-national only"
+            : ""}
       </div>
     </label>
 
@@ -236,15 +242,25 @@
         }}
       >
         {#each AXIS_VARS as v (v.id)}
-          <option value={v.id} disabled={v.id === xVarId || (v.levelOnly === 0 && level > 0)}
-            >{v.label}{v.levelOnly === 0 && level > 0 ? " (national only)" : ""}</option
+          <option
+            value={v.id}
+            disabled={v.id === xVarId ||
+              (v.levelOnly === 0 && level > 0) ||
+              (v.subNationalOnly === true && level === 0)}
+            >{v.label}{v.levelOnly === 0 && level > 0
+              ? " (national only)"
+              : v.subNationalOnly && level === 0
+                ? " (sub-national only)"
+                : ""}</option
           >
         {/each}
       </select>
       <div class="var-meta">
         {ySpec.yearNote ?? ""}{ySpec.levelNote ? ` · ${ySpec.levelNote}` : ""}{ySpec.levelOnly === 0
           ? " · national level only"
-          : ""}
+          : ySpec.subNationalOnly
+            ? " · sub-national only"
+            : ""}
       </div>
     </label>
 
@@ -257,7 +273,9 @@
         }}
       >
         {#each SIZE_VARS as v (v.id)}
-          <option value={v.id}>{v.label}</option>
+          <option value={v.id} disabled={v.levelOnly === 0 && level > 0}
+            >{v.label}{v.levelOnly === 0 && level > 0 ? " (national only)" : ""}</option
+          >
         {/each}
       </select>
       <div class="var-meta">{sizeSpec.yearNote ?? ""}</div>
@@ -337,9 +355,6 @@
           {/if}
         </p>
       {/if}
-    {/if}
-    {#if toastMessage}
-      <div class="toast" role="alert">{toastMessage}</div>
     {/if}
     <button
       class="theme-toggle"

@@ -14,6 +14,7 @@ export interface VariableSpec {
   sizeMax?: number;
   sizeExamples?: { value: number; label: string }[];
   levelOnly?: 0;
+  subNationalOnly?: true;
   yearNote?: string;
   levelNote?: string;
 }
@@ -76,6 +77,35 @@ export const AXIS_VARS: VariableSpec[] = [
     levelOnly: 0,
     yearNote: "1999–2031",
   },
+  {
+    id: "hum_needs_per_100k",
+    label: "People in humanitarian need per 100K",
+    format: (v) => v.toFixed(0),
+    scale: "linear",
+    min: 0,
+    yearNote: "2024–2026",
+    levelNote: "intersectoral total, 24 countries",
+  },
+  {
+    id: "refugees_per_100k",
+    label: "Refugees & asylum seekers hosted per 100K",
+    format: (v) => v.toFixed(0),
+    scale: "linear",
+    min: 0,
+    levelOnly: 0,
+    yearNote: "2010–2026",
+  },
+  {
+    id: "rainfall_anomaly_pct",
+    label: "Rainfall anomaly vs long-term average",
+    format: (v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%",
+    scale: "linear",
+    min: -100,
+    max: 100,
+    subNationalOnly: true,
+    yearNote: "2022–2026",
+    levelNote: "deviation from long-term avg (0 = normal, − = drier, + = wetter)",
+  },
 ];
 
 export const SIZE_VARS: VariableSpec[] = [
@@ -121,6 +151,35 @@ export const SIZE_VARS: VariableSpec[] = [
       { value: 100_000, label: "100 K" },
     ],
   },
+  {
+    id: "hum_needs_total",
+    label: "People in humanitarian need",
+    format: (v) => v.toLocaleString(),
+    scale: "linear",
+    sizeMax: 50_000_000,
+    yearNote: "2024–2026",
+    sizeExamples: [
+      { value: 0, label: "0" },
+      { value: 15_000_000, label: "15 M" },
+      { value: 30_000_000, label: "30 M" },
+      { value: 50_000_000, label: "50 M" },
+    ],
+  },
+  {
+    id: "refugees_total",
+    label: "Refugees & asylum seekers hosted",
+    format: (v) => v.toLocaleString(),
+    scale: "linear",
+    sizeMax: 10_000_000,
+    levelOnly: 0,
+    yearNote: "2010–2026",
+    sizeExamples: [
+      { value: 0, label: "0" },
+      { value: 3_000_000, label: "3 M" },
+      { value: 6_000_000, label: "6 M" },
+      { value: 10_000_000, label: "10 M" },
+    ],
+  },
 ];
 
 export interface BubbleRow {
@@ -140,8 +199,11 @@ export interface DataAvailability {
   population: DataStatus;
   conflict: DataStatus;
   food: DataStatus;
+  humNeeds: DataStatus;
   idps: DataStatus;
   poverty: DataStatus;
+  rainfall: DataStatus;
+  refugees: DataStatus;
 }
 
 export interface BubbleResult {
@@ -251,6 +313,9 @@ export async function buildBubbleData(
   const needsPoverty = ids.some((id) => id.startsWith("poverty_"));
   const needsRisk = level === 0;
   const needsFunding = level === 0 && ids.includes("funding_gap_pct");
+  const needsHumNeeds = ids.some((id) => id.startsWith("hum_needs"));
+  const needsRefugees = level === 0 && ids.some((id) => id.startsWith("refugees_"));
+  const needsRainfall = level > 0 && ids.includes("rainfall_anomaly_pct");
 
   const popUrl = partUrl("geography-infrastructure/baseline-population", level, parentCode);
   const conflictUrl = partUrl("coordination-context/conflict-events", level, parentCode);
@@ -259,6 +324,13 @@ export async function buildBubbleData(
   const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level, parentCode);
   const riskUrl = `${BASE}/coordination-context/national-risk.parquet`;
   const fundingUrl = `${BASE}/coordination-context/funding.parquet`;
+  const humNeedsUrl = partUrl("affected-people/humanitarian-needs", level, parentCode);
+  const humNeedsFbUrl =
+    level === 1 ? partUrl("affected-people/humanitarian-needs", 2, parentCode) : null;
+  const rainfallUrl = needsRainfall ? partUrl("climate/rainfall", level, parentCode) : null;
+  const rainfallFbUrl =
+    level === 1 && needsRainfall ? partUrl("climate/rainfall", 2, parentCode) : null;
+  const refugeesUrl = `${BASE}/affected-people/refugees-persons-of-concern.parquet`;
 
   // For sub-national levels, not every country has data for every dataset.
   // Summable datasets (pop, conflict, idps) fall back to admin_level=2 aggregated to
@@ -270,9 +342,22 @@ export async function buildBubbleData(
     level === 1 ? partUrl("coordination-context/conflict-events", 2, parentCode) : null;
   const idpFbUrl = level === 1 ? partUrl("affected-people/idps", 2, parentCode) : null;
 
-  const [popOk, conflictOk, foodOk, idpOk, povertyOk, popFbOk, conflictFbOk, idpFbOk] =
+  const [
+    popOk,
+    conflictOk,
+    foodOk,
+    idpOk,
+    povertyOk,
+    popFbOk,
+    conflictFbOk,
+    idpFbOk,
+    humNeedsOk,
+    humNeedsFbOk,
+    rainfallOk,
+    rainfallFbOk,
+  ] =
     level === 0
-      ? [true, true, true, true, true, false, false, false]
+      ? [true, true, true, true, true, false, false, false, true, false, false, false]
       : await Promise.all([
           urlExists(popUrl),
           needsConflict ? urlExists(conflictUrl) : Promise.resolve(false),
@@ -282,12 +367,19 @@ export async function buildBubbleData(
           popFbUrl ? urlExists(popFbUrl) : Promise.resolve(false),
           conflictFbUrl && needsConflict ? urlExists(conflictFbUrl) : Promise.resolve(false),
           idpFbUrl && needsIDPs ? urlExists(idpFbUrl) : Promise.resolve(false),
+          needsHumNeeds ? urlExists(humNeedsUrl) : Promise.resolve(false),
+          needsHumNeeds && humNeedsFbUrl ? urlExists(humNeedsFbUrl) : Promise.resolve(false),
+          needsRainfall && rainfallUrl ? urlExists(rainfallUrl) : Promise.resolve(false),
+          needsRainfall && rainfallFbUrl ? urlExists(rainfallFbUrl) : Promise.resolve(false),
         ]);
 
   const popIsAdmin2 = !popOk && popFbOk;
   const effectivePopUrl = popOk ? popUrl : popFbOk ? popFbUrl! : null;
   const effectiveConflictUrl = conflictOk ? conflictUrl : conflictFbOk ? conflictFbUrl! : null;
   const effectiveIdpUrl = idpOk ? idpUrl : idpFbOk ? idpFbUrl! : null;
+  const humNeedsIsAdmin2 = !humNeedsOk && humNeedsFbOk;
+  const effectiveHumNeedsUrl = humNeedsOk ? humNeedsUrl : humNeedsFbOk ? humNeedsFbUrl! : null;
+  const effectiveRainfallUrl = rainfallOk ? rainfallUrl : rainfallFbOk ? rainfallFbUrl! : null;
 
   const availability: DataAvailability = {
     population:
@@ -308,6 +400,15 @@ export async function buildBubbleData(
         : foodOk
           ? "available"
           : "unavailable",
+    humNeeds: !needsHumNeeds
+      ? "not-needed"
+      : level === 0
+        ? "available"
+        : humNeedsOk
+          ? "available"
+          : humNeedsFbOk
+            ? "aggregated"
+            : "unavailable",
     idps: !needsIDPs
       ? "not-needed"
       : level === 0
@@ -324,6 +425,14 @@ export async function buildBubbleData(
         : povertyOk
           ? "available"
           : "unavailable",
+    rainfall: !needsRainfall
+      ? "not-needed"
+      : rainfallOk
+        ? "available"
+        : rainfallFbOk
+          ? "aggregated"
+          : "unavailable",
+    refugees: !needsRefugees ? "not-needed" : "available",
   };
 
   // Population is the anchor — no pop data at this level means nothing to show.
@@ -341,6 +450,9 @@ export async function buildBubbleData(
     if (id.startsWith("poverty_")) return "poverty_agg";
     if (id === "national_risk_overall") return "risk_agg";
     if (id === "funding_gap_pct") return "funding_agg";
+    if (id.startsWith("hum_needs")) return "hum_needs_agg";
+    if (id.startsWith("refugees_")) return "refugees_agg";
+    if (id === "rainfall_anomaly_pct") return "rainfall_agg";
     return "pop"; // baseline_population — use pop as anchor
   }
 
@@ -365,6 +477,16 @@ export async function buildBubbleData(
         return "GREATEST(0.0, (1.0 - fn.funded / NULLIF(fn.req, 0)) * 100.0)";
       case "baseline_population":
         return "CAST(p.population AS DOUBLE)";
+      case "hum_needs_per_100k":
+        return "hn.hum_needs_total * 100000.0 / NULLIF(p.population, 0)";
+      case "hum_needs_total":
+        return "COALESCE(hn.hum_needs_total, 0)";
+      case "refugees_per_100k":
+        return "rf.refugees_total * 100000.0 / NULLIF(p.population, 0)";
+      case "refugees_total":
+        return "COALESCE(rf.refugees_total, 0)";
+      case "rainfall_anomaly_pct":
+        return "ra.rainfall_anomaly_pct - 100.0";
       default:
         return "NULL";
     }
@@ -379,6 +501,9 @@ export async function buildBubbleData(
   const needsI = needsIDPs;
   const needsPv = needsPoverty;
   const needsFn = needsFunding;
+  const needsHn = needsHumNeeds;
+  const needsRf = needsRefugees;
+  const needsRa = needsRainfall;
 
   const sql = `
 WITH
@@ -488,6 +613,54 @@ funding_agg AS (
 )`
     : ""
 }
+${
+  needsHumNeeds
+    ? `,
+hum_needs_agg AS (
+  ${
+    effectiveHumNeedsUrl
+      ? `SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(population) AS hum_needs_total
+  FROM read_parquet('${effectiveHumNeedsUrl}', hive_partitioning=true)
+  WHERE population_status = 'INN' AND sector_code = 'Intersectoral' ${filterClause}
+  GROUP BY code, ${humNeedsIsAdmin2 ? `${nameCol}, ` : ""}year`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::BIGINT AS hum_needs_total WHERE FALSE`
+  }
+)`
+    : ""
+}
+${
+  needsRefugees
+    ? `,
+refugees_agg AS (
+  SELECT asylum_location_code AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(population) AS refugees_total
+  FROM read_parquet('${refugeesUrl}')
+  WHERE population_group IN ('REF', 'ASY')
+    AND gender = 'all' AND age_range = 'all'
+  GROUP BY code, year
+)`
+    : ""
+}
+${
+  needsRainfall
+    ? `,
+rainfall_agg AS (
+  ${
+    effectiveRainfallUrl
+      ? `SELECT ${codeCol} AS code,
+         CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+         SUM(rainfall_anomaly_pct * number_pixels) / NULLIF(SUM(number_pixels), 0) AS rainfall_anomaly_pct
+  FROM read_parquet('${effectiveRainfallUrl}', hive_partitioning=true)
+  WHERE aggregation_period = '1-month' ${filterClause}
+  GROUP BY code, year`
+      : `SELECT NULL::VARCHAR AS code, NULL::INTEGER AS year, NULL::DOUBLE AS rainfall_anomaly_pct WHERE FALSE`
+  }
+)`
+    : ""
+}
 ,
 xy_keys AS (
   SELECT code, year FROM ${xCteName}
@@ -511,6 +684,9 @@ ${needsI ? "LEFT JOIN idp_agg i USING (code, year)" : ""}
 ${needsPv ? "LEFT JOIN poverty_agg pv USING (code, year)" : ""}
 ${needsRisk ? "LEFT JOIN risk_agg r ON k.code = r.code" : ""}
 ${needsFn ? "LEFT JOIN funding_agg fn USING (code, year)" : ""}
+${needsHn ? "LEFT JOIN hum_needs_agg hn USING (code, year)" : ""}
+${needsRf ? "LEFT JOIN refugees_agg rf USING (code, year)" : ""}
+${needsRa ? "LEFT JOIN rainfall_agg ra USING (code, year)" : ""}
 WHERE p.name IS NOT NULL
   `;
 
