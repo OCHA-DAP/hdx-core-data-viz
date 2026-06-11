@@ -8,7 +8,7 @@ A browser-based explorer for HAPI (Humanitarian API) data — humanitarian datas
 
 All data comes from **cloud-native Parquet files hosted on Source Cooperative**, read directly in the browser using `hyparquet`. No backend server. HTTP range requests mean only the columns you ask for get downloaded.
 
-- **HAPI docs**: https://hdx-hapi.readthedocs.io/en/latest/
+- **HAPI docs**: <https://hdx-hapi.readthedocs.io/en/latest/>
 - **Local STAC metadata**: `src/data/hapi/` — mirrors the Source Cooperative folder structure; run `npm run sync-stac` to refresh
 
 ### URL patterns
@@ -57,7 +57,7 @@ All partitioned datasets share the same location columns:
 Use **`playwright-cli`** (installed at `/opt/homebrew/bin/playwright-cli`) to drive the browser for UI verification. It maintains a persistent session so you don't need to re-navigate between commands:
 
 ```bash
-playwright-cli open "http://localhost:4323/explore"   # open (dev server must be running)
+playwright-cli open "http://localhost:4321/"   # open (dev server must be running)
 playwright-cli snapshot                                # inspect DOM / get element refs
 playwright-cli screenshot --filename /tmp/out.png      # take a screenshot
 playwright-cli click <element-ref>                     # click an element
@@ -65,7 +65,7 @@ playwright-cli eval "<js expression>"                  # run JS in the page
 playwright-cli close                                   # close when done
 ```
 
-Start the dev server first: `npm run dev -- --port 4323`
+Start the dev server first: `npm run dev`
 
 ## Design principle
 
