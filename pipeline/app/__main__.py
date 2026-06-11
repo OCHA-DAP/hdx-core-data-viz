@@ -22,7 +22,7 @@ def main() -> None:
         for endpoint in discover_endpoints(client):
             logger.info("\n→ %s", endpoint["id"])
             pages = fetch_endpoint(client, endpoint["id"])
-            path, schema, start, end, row_count = write_parquet(
+            path, schema, start, end, row_count, partition_keys = write_parquet(
                 endpoint["id"], pages, endpoint["arrow_schema"]
             )
             results.append(
@@ -33,6 +33,7 @@ def main() -> None:
                     "schema": schema,
                     "start": start,
                     "end": end,
+                    "partition_keys": partition_keys,
                 }
             )
 

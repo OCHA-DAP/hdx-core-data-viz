@@ -1,9 +1,10 @@
-"""Migrate existing flat Parquet outputs to partitioned layout and rebuild STAC.
+"""Migrate existing Parquet outputs to current layout and rebuild STAC.
 
 Run with:  uv run -m app.migrate
 """
 
 import logging
+import shutil
 from pathlib import Path
 
 import pyarrow as pa
@@ -11,7 +12,7 @@ import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from . import config
-from .load import _TEMPORAL_COLS, _write_partitioned, _write_single
+from .load import _TEMPORAL_COLS, _row_group_size, _write_partitioned, _write_single
 from .stac import build_collection
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ def migrate() -> None:
             if item.is_file() and item.suffix == ".parquet":
                 result = _migrate_flat(item, theme, output_dir)
             elif item.is_dir():
-                result = _collect_partitioned(item, theme)
+                result = _migrate_partitioned(item, theme)
             else:
                 continue
             if result is not None:
@@ -40,23 +41,26 @@ def migrate() -> None:
 
 
 def _migrate_flat(path: Path, theme: str, output_dir: Path) -> dict:
-    """Read a flat .parquet file, write new layout, return a STAC result dict."""
+    """Read a flat .parquet file, write current layout, return a STAC result dict."""
     name = path.stem
     endpoint_id = f"{theme}/{name}"
     logger.info("\n→ %s", endpoint_id)
 
     table = pq.read_table(path)
     schema = table.schema
+    rg_size = _row_group_size(table)
 
     if "admin_level" in schema.names:
         out_dir = path.parent / name
         out_dir.mkdir(exist_ok=True)
-        _write_partitioned(table, schema, out_dir)
+        _write_partitioned(table, schema, out_dir, rg_size)
         path.unlink()
         href = f"{theme}/{name}/"
+        partition_keys: list[str] | None = ["admin_level"]
     else:
-        _write_single(table, schema, path)
+        _write_single(table, schema, path, rg_size)
         href = str(path.relative_to(output_dir))
+        partition_keys = None
 
     t_start, t_end = _temporal(table, schema)
     return {
@@ -66,37 +70,47 @@ def _migrate_flat(path: Path, theme: str, output_dir: Path) -> dict:
         "schema": schema,
         "start": t_start,
         "end": t_end,
+        "partition_keys": partition_keys,
     }
 
 
-def _collect_partitioned(directory: Path, theme: str) -> dict | None:
-    """Collect STAC metadata from an already-partitioned dataset directory."""
+def _migrate_partitioned(directory: Path, theme: str) -> dict | None:
+    """Consolidate a partitioned dataset to admin_level-only layout.
+
+    Reads all Parquet files under the directory (including any location_code=*
+    sub-partitions from the old layout), rewrites as admin_level=N/part-0.parquet,
+    then removes stale subdirectories.
+    """
     part_files = sorted(directory.rglob("*.parquet"))
     if not part_files:
         return None
 
     name = directory.name
     endpoint_id = f"{theme}/{name}"
-    logger.info("\n→ %s (already partitioned)", endpoint_id)
+    logger.info("\n→ %s", endpoint_id)
 
-    schema = pq.read_schema(part_files[0])
-    row_count = sum(pq.read_metadata(f).num_rows for f in part_files)
+    table = pa.concat_tables([pq.ParquetFile(f).read() for f in part_files])
+    schema = table.schema
+    rg_size = _row_group_size(table)
 
-    t_start = t_end = None
-    temporal_cols = [c for c in _TEMPORAL_COLS if c in schema.names]
-    if temporal_cols:
-        combined = pa.concat_tables(
-            [pq.read_table(f, columns=temporal_cols) for f in part_files]
-        )
-        t_start, t_end = _temporal(combined, schema)
+    _write_partitioned(table, schema, directory, rg_size)
 
+    # Remove stale location_code=* subdirectories left from old layout
+    for level_dir in directory.iterdir():
+        if level_dir.is_dir() and level_dir.name.startswith("admin_level="):
+            for child in level_dir.iterdir():
+                if child.is_dir() and child.name.startswith("location_code="):
+                    shutil.rmtree(child)
+
+    t_start, t_end = _temporal(table, schema)
     return {
         "endpoint": {"id": endpoint_id, "theme": theme},
         "path": f"{theme}/{name}/",
-        "row_count": row_count,
+        "row_count": len(table),
         "schema": schema,
         "start": t_start,
         "end": t_end,
+        "partition_keys": ["admin_level"],
     }
 
 

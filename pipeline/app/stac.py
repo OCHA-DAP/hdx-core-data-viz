@@ -110,6 +110,11 @@ def _build_item(r: dict, base: str, updated_at: datetime) -> pystac.Item:
     end = _parse_dt(r["end"])
     has_interval = start is not None and end is not None
 
+    partition_keys: list[str] | None = r.get("partition_keys")
+    asset_extra: dict = (
+        {"hive:partition_keys": partition_keys} if partition_keys else {}
+    )
+
     item = pystac.Item(
         id=item_id,
         geometry=None,
@@ -127,6 +132,7 @@ def _build_item(r: dict, base: str, updated_at: datetime) -> pystac.Item:
                 href=parquet_href,
                 media_type=_MT.VND_APACHE_PARQUET,
                 roles=["data"],
+                extra_fields=asset_extra,
             )
         },
     )
