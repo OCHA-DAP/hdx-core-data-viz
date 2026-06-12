@@ -4,15 +4,16 @@ interface Props {
 }
 
 const { title = "HDX" } = Astro.props;
+const base = import.meta.env.BASE_URL;
 const pathname = Astro.url.pathname;
 
 const navLinks = [
-  { href: "/", label: "Explorer" },
-  { href: "/refugees", label: "Refugee Flows" },
-  { href: "/timeline", label: "Crisis Timeline" },
-  { href: "/food-prices", label: "Food Prices" },
-  { href: "/food-security", label: "Food Security" },
-  { href: "/availability", label: "Availability" },
+  { href: base, label: "Explorer" },
+  { href: `${base}refugees`, label: "Refugee Flows" },
+  { href: `${base}timeline`, label: "Crisis Timeline" },
+  { href: `${base}food-prices`, label: "Food Prices" },
+  { href: `${base}food-security`, label: "Food Security" },
+  { href: `${base}availability`, label: "Availability" },
 ];
 ---
 
