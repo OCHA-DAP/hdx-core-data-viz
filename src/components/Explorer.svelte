@@ -18,7 +18,7 @@
   let admin1Name: string | undefined = $state();
   let theme: "dark" | "light" = $state("light");
 
-  let xVarId: string = $state("conflict_fatalities_per_100k");
+  let xVarId: string = $state("hum_needs_per_100k");
   let yVarId: string = $state("ipc_phase3_fraction");
   let sizeVarId: string = $state("idp_population");
 
@@ -90,7 +90,7 @@
       countryCode = undefined;
       countryName = undefined;
       if (AXIS_VARS.find((v) => v.id === xVarId)?.subNationalOnly)
-        xVarId = "conflict_fatalities_per_100k";
+        xVarId = "hum_needs_per_100k";
       if (AXIS_VARS.find((v) => v.id === yVarId)?.subNationalOnly) yVarId = "ipc_phase3_fraction";
     }
     level = target;
@@ -100,7 +100,7 @@
     if (level === 0) {
       // Reset level-0-only variables before drilling in
       if (AXIS_VARS.find((v) => v.id === xVarId)?.levelOnly === 0)
-        xVarId = "conflict_fatalities_per_100k";
+        xVarId = "hum_needs_per_100k";
       if (AXIS_VARS.find((v) => v.id === yVarId)?.levelOnly === 0) yVarId = "ipc_phase3_fraction";
       countryCode = code;
       countryName = name;
@@ -143,12 +143,17 @@
                 .filter(Boolean),
             ),
           ].sort((a, b) => a - b);
-          const maxY = rowYears[rowYears.length - 1] ?? 0;
+          const yearCounts = new Map<number, number>();
+          for (const r of rows.filter((r) => r.x != null && r.y != null)) {
+            yearCounts.set(r.year, (yearCounts.get(r.year) ?? 0) + 1);
+          }
+          const bestYear =
+            [...yearCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
           selectedYear = rowYears.includes(selectedYear)
             ? selectedYear
             : rowYears.includes(2023)
               ? 2023
-              : maxY;
+              : bestYear;
           loading = false;
         }
       })
@@ -208,7 +213,7 @@
       {/each}
     </div>
 
-    {#if !loading && !error && years.length > 0}
+    {#if !error && years.length > 0}
       <div class="year-ctrl">
         {#if years.length > 1}
           <button class="step-btn" onclick={() => stepYear(-1)} disabled={years.indexOf(selectedYear) <= 0}>◀</button>
@@ -436,7 +441,6 @@
     background: var(--bg);
     color: var(--text);
     cursor: pointer;
-    max-width: 190px;
   }
   .topbar.dark .ctrl-group select {
     background: rgba(255, 255, 255, 0.06);

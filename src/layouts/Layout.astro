@@ -119,7 +119,7 @@ const navLinks = [
       <span class="nav-wordmark">HDX Core Data</span>
       <div class="nav-links">
         {navLinks.map(({ href, label }) => (
-          <a href={href} class={pathname === href ? "active" : ""}>
+          <a href={href} class={pathname.replace(/\/$/, "") === href.replace(/\/$/, "") ? "active" : ""}>
             {label}
           </a>
         ))}
