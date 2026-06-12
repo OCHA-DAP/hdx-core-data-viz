@@ -1135,6 +1135,262 @@ export async function fetchIpcPhases(year: number | null): Promise<IpcPhaseRow[]
   return rows;
 }
 
+// ── Crisis timeline global overview ──────────────────────────────────────────
+
+export interface CrisisCountryRow {
+  code: string;
+  name: string;
+  // Time-series (by year) for sparklines
+  conflictByYear: { year: number; fatalities: number }[];
+  idpsByYear: { year: number; population: number }[];
+  ipcByPeriod: { period: string; phase3plus: number }[];
+  // Latest values + YoY / period-over-period change
+  latestFatalities: number | null;
+  fatalitiesChangePct: number | null;
+  latestIdps: number | null;
+  idpsChangePct: number | null;
+  latestIpc: number | null; // percentage points (0–100)
+  ipcChangePp: number | null; // pp change from prior assessment
+  // Sort score: abs(ipcChangePp) ?? abs(fatalitiesChangePct)
+  sortScore: number;
+}
+
+let crisisGlobalCache: CrisisCountryRow[] | null = null;
+
+export async function fetchCrisisTimelineGlobal(): Promise<CrisisCountryRow[]> {
+  if (crisisGlobalCache) return crisisGlobalCache;
+  const conn = await getConn();
+
+  const [countries, conflictResult, idpResult, ipcResult] = await Promise.all([
+    fetchCountryList(),
+    conn.query(`
+      SELECT location_code, location_name,
+             CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+             SUM(fatalities) AS fatalities
+      FROM read_parquet('${BASE}/coordination-context/conflict-events/admin_level=2/part-0.parquet', hive_partitioning=false)
+      GROUP BY location_code, location_name, year
+      ORDER BY location_code, year
+    `).catch(() => null),
+    conn.query(`
+      SELECT location_code, location_name,
+             CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+             SUM(population) AS population
+      FROM read_parquet('${BASE}/affected-people/idps/admin_level=0/part-0.parquet', hive_partitioning=false)
+      GROUP BY location_code, location_name, year
+      ORDER BY location_code, year
+    `).catch(() => null),
+    conn.query(`
+      SELECT location_code, location_name, reference_period_start AS period,
+             LEAST(1.0, SUM(CASE WHEN ipc_phase IN ('3','4','5') THEN population_fraction_in_phase ELSE 0 END)) AS phase3plus
+      FROM read_parquet('${BASE}/food-security-nutrition-poverty/food-security/admin_level=0/part-0.parquet', hive_partitioning=false)
+      WHERE ipc_type = 'current'
+      GROUP BY location_code, location_name, reference_period_start
+      ORDER BY location_code, reference_period_start
+    `).catch(() => null),
+  ]);
+
+  const crisisSet = new Set(
+    countries.filter((c) => c.hasHrp || c.inGho).map((c) => c.code),
+  );
+
+  // Build per-country maps
+  const conflictMap = new Map<string, { year: number; fatalities: number }[]>();
+  const idpMap = new Map<string, { year: number; population: number }[]>();
+  const ipcMap = new Map<string, { period: string; phase3plus: number }[]>();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (conflictResult) for (const r of conflictResult.toArray()) {
+    const code = String(r.location_code);
+    if (!crisisSet.has(code)) continue;
+    if (!conflictMap.has(code)) conflictMap.set(code, []);
+    conflictMap.get(code)!.push({ year: Number(r.year), fatalities: Number(r.fatalities) });
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (idpResult) for (const r of idpResult.toArray()) {
+    const code = String(r.location_code);
+    if (!crisisSet.has(code)) continue;
+    if (!idpMap.has(code)) idpMap.set(code, []);
+    idpMap.get(code)!.push({ year: Number(r.year), population: Number(r.population) });
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (ipcResult) for (const r of ipcResult.toArray()) {
+    const code = String(r.location_code);
+    if (!crisisSet.has(code)) continue;
+    if (!ipcMap.has(code)) ipcMap.set(code, []);
+    ipcMap.get(code)!.push({ period: String(r.period), phase3plus: Number(r.phase3plus) * 100 });
+  }
+
+  const allCodes = new Set([...conflictMap.keys(), ...idpMap.keys(), ...ipcMap.keys()]);
+  const nameMap = new Map(countries.map((c) => [c.code, c.name]));
+
+  const rows: CrisisCountryRow[] = [];
+  for (const code of allCodes) {
+    const name = nameMap.get(code) ?? code;
+    const conflictByYear = conflictMap.get(code) ?? [];
+    const idpsByYear = idpMap.get(code) ?? [];
+    const ipcByPeriod = ipcMap.get(code) ?? [];
+
+    // Conflict YoY
+    let latestFatalities: number | null = null;
+    let fatalitiesChangePct: number | null = null;
+    if (conflictByYear.length >= 1) {
+      latestFatalities = conflictByYear[conflictByYear.length - 1].fatalities;
+      if (conflictByYear.length >= 2) {
+        const prev = conflictByYear[conflictByYear.length - 2].fatalities;
+        fatalitiesChangePct = prev > 0 ? ((latestFatalities - prev) / prev) * 100 : null;
+      }
+    }
+
+    // IDPs YoY
+    let latestIdps: number | null = null;
+    let idpsChangePct: number | null = null;
+    if (idpsByYear.length >= 1) {
+      latestIdps = idpsByYear[idpsByYear.length - 1].population;
+      if (idpsByYear.length >= 2) {
+        const prev = idpsByYear[idpsByYear.length - 2].population;
+        idpsChangePct = prev > 0 ? ((latestIdps - prev) / prev) * 100 : null;
+      }
+    }
+
+    // IPC period-over-period
+    let latestIpc: number | null = null;
+    let ipcChangePp: number | null = null;
+    if (ipcByPeriod.length >= 1) {
+      latestIpc = ipcByPeriod[ipcByPeriod.length - 1].phase3plus;
+      if (ipcByPeriod.length >= 2) {
+        ipcChangePp = latestIpc - ipcByPeriod[ipcByPeriod.length - 2].phase3plus;
+      }
+    }
+
+    const sortScore =
+      ipcChangePp != null
+        ? Math.abs(ipcChangePp)
+        : fatalitiesChangePct != null
+          ? Math.abs(fatalitiesChangePct) / 10
+          : 0;
+
+    rows.push({
+      code, name,
+      conflictByYear, idpsByYear, ipcByPeriod,
+      latestFatalities, fatalitiesChangePct,
+      latestIdps, idpsChangePct,
+      latestIpc, ipcChangePp,
+      sortScore,
+    });
+  }
+
+  rows.sort((a, b) => b.sortScore - a.sortScore);
+  crisisGlobalCache = rows;
+  return rows;
+}
+
+// ── Food price global overview ────────────────────────────────────────────────
+
+export interface FoodPriceCountryRow {
+  code: string;
+  name: string;
+  // Monthly composite price index series (for sparkline)
+  byMonth: { period: string; index: number }[];
+  latestIndex: number | null;
+  change12m: number | null; // composite index change over last 12 months
+  latestPeriod: string | null;
+  earliestPeriod: string | null;
+  sortScore: number;
+}
+
+let foodPriceGlobalCache: FoodPriceCountryRow[] | null = null;
+
+export async function fetchFoodPriceGlobal(): Promise<FoodPriceCountryRow[]> {
+  if (foodPriceGlobalCache) return foodPriceGlobalCache;
+  const conn = await getConn();
+
+  // Run one simpler query per admin level — avoids a huge cross-level UNION ALL
+  const singleLevelSql = (lvl: number) => `
+    WITH base AS (
+      SELECT location_code, location_name, commodity_name,
+             LEFT(reference_period_start, 7) AS period,
+             AVG(price) AS avg_price
+      FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
+      WHERE price_flag = 'actual' AND price > 0
+      GROUP BY location_code, location_name, commodity_name, period
+    ),
+    first_prices AS (
+      SELECT location_code, commodity_name, avg_price AS first_price
+      FROM base
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY location_code, commodity_name ORDER BY period) = 1
+    ),
+    indexed AS (
+      SELECT b.location_code, b.location_name, b.period,
+             b.avg_price / NULLIF(fp.first_price, 0) * 100 AS price_index
+      FROM base b
+      JOIN first_prices fp ON b.location_code = fp.location_code
+        AND b.commodity_name = fp.commodity_name
+    )
+    SELECT location_code, location_name, period,
+           AVG(price_index) AS composite_index
+    FROM indexed
+    GROUP BY location_code, location_name, period
+    ORDER BY location_code, period
+  `;
+
+  const [countries, r0, r1, r2] = await Promise.all([
+    fetchCountryList(),
+    conn.query(singleLevelSql(0)).catch(() => null),
+    conn.query(singleLevelSql(1)).catch(() => null),
+    conn.query(singleLevelSql(2)).catch(() => null),
+  ]);
+
+  const crisisSet = new Set(
+    countries.filter((c) => c.hasHrp || c.inGho).map((c) => c.code),
+  );
+  const nameMap = new Map(countries.map((c) => [c.code, c.name]));
+
+  // Merge results from all admin levels: keep highest composite_index per country+period
+  // (finer levels have more market coverage, so they're more representative)
+  const byCountry = new Map<string, Map<string, number>>();
+  for (const result of [r0, r1, r2]) {
+    if (!result) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of result.toArray()) {
+      const code = String(r.location_code);
+      if (!crisisSet.has(code)) continue;
+      if (!byCountry.has(code)) byCountry.set(code, new Map());
+      const periodMap = byCountry.get(code)!;
+      const period = String(r.period);
+      const idx = Number(r.composite_index);
+      // Take the most granular level's value (last one written wins — r2 overrides r1 overrides r0)
+      periodMap.set(period, idx);
+    }
+  }
+
+  const rows: FoodPriceCountryRow[] = [];
+  for (const [code, periodMap] of byCountry) {
+    const months = [...periodMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([period, index]) => ({ period, index }));
+    if (months.length < 13) continue;
+
+    const latestIndex = months[months.length - 1].index;
+    const ago12 = months[months.length - 13]?.index ?? null;
+    const change12m = ago12 != null ? latestIndex - ago12 : null;
+
+    rows.push({
+      code,
+      name: nameMap.get(code) ?? code,
+      byMonth: months,
+      latestIndex,
+      change12m,
+      latestPeriod: months[months.length - 1].period,
+      earliestPeriod: months[0].period,
+      sortScore: change12m != null ? Math.abs(change12m) : 0,
+    });
+  }
+
+  rows.sort((a, b) => b.sortScore - a.sortScore);
+  foodPriceGlobalCache = rows;
+  return rows;
+}
+
 // ── Refugee flow query ────────────────────────────────────────────────────────
 
 export interface FlowRow {

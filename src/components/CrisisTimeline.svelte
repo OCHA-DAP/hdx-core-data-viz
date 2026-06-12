@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import * as echarts from "echarts";
+  import CrisisTileGrid from "./CrisisTileGrid.svelte";
   import {
     fetchCountryList,
     fetchCrisisTimeline,
@@ -18,11 +19,13 @@
   let el = $state<HTMLDivElement>();
   let chart: echarts.ECharts | undefined;
 
+  // showGrid: true = global tile view; false = country detail view
+  let showGrid = $state(true);
+
   $effect(() => { document.documentElement.dataset.theme = theme; });
 
   $effect(() => {
     fetchCountryList().then((list) => {
-      // Only show crisis countries (HRP or GHO)
       countries = list.filter((c) => c.hasHrp || c.inGho);
     });
   });
@@ -41,6 +44,16 @@
       .catch((e) => { if (!cancelled) { error = String(e); loading = false; } });
     return () => { cancelled = true; };
   });
+
+  function selectCountry(code: string) {
+    locationCode = code;
+    showGrid = false;
+  }
+
+  function backToGrid() {
+    locationCode = "";
+    showGrid = true;
+  }
 
   const PANELS = [
     {
@@ -95,7 +108,6 @@
 
     const years = _rows.map((r) => r.year);
 
-    // 4 grids stacked vertically, using full chart height (no ECharts title)
     const tops = ["1%", "26%", "52%", "77%"];
     const gridH = "19%";
 
@@ -181,9 +193,15 @@
 
 <div class="wrapper">
   <nav class="topbar" class:dark={theme === "dark"}>
+    {#if !showGrid}
+      <button class="back-btn" onclick={backToGrid}>← All countries</button>
+    {/if}
+
     <div class="ctrl-group">
       <label class="ctrl-label" for="country-sel">Country</label>
-      <select id="country-sel" bind:value={locationCode} disabled={countries.length === 0}>
+      <select id="country-sel" bind:value={locationCode}
+        onchange={() => { if (locationCode) showGrid = false; else showGrid = true; }}
+        disabled={countries.length === 0}>
         <option value="">Select crisis country…</option>
         {#each countries as c}
           <option value={c.code}>{c.name}</option>
@@ -191,17 +209,19 @@
       </select>
     </div>
 
-    {#if rows.length > 0}
+    {#if rows.length > 0 && !showGrid}
       <span class="stat">
         {countries.find((c) => c.code === locationCode)?.name ?? locationCode} · {rows[0].year}–{rows[rows.length - 1].year}
       </span>
     {/if}
 
-    <div class="panel-notes">
-      {#each PANELS as p}
-        <span class="note-chip" style="border-color: {p.color}; color: {p.color}">{p.label}</span>
-      {/each}
-    </div>
+    {#if !showGrid}
+      <div class="panel-notes">
+        {#each PANELS as p}
+          <span class="note-chip" style="border-color: {p.color}; color: {p.color}">{p.label}</span>
+        {/each}
+      </div>
+    {/if}
 
     <button
       class="theme-toggle"
@@ -214,28 +234,27 @@
     </button>
   </nav>
 
-  <div class="chart-area">
-    {#if !locationCode}
-      <div class="overlay">
-        <p>Select a country to see how crisis indicators evolved over time.</p>
-        <p class="sub">Covers conflict fatalities, IDPs, food insecurity, and funding gaps.</p>
-      </div>
-    {:else if loading}
-      <div class="overlay"><div class="spinner"></div><p>Loading crisis data…</p></div>
-    {:else if error}
-      <div class="overlay error"><p>Failed to load data</p><pre>{error}</pre></div>
-    {:else if !hasData}
-      <div class="overlay"><p>No crisis indicator data found for this country.</p></div>
-    {/if}
+  {#if showGrid}
+    <CrisisTileGrid {theme} onSelect={selectCountry} />
+  {:else}
+    <div class="chart-area">
+      {#if loading}
+        <div class="overlay"><div class="spinner"></div><p>Loading crisis data…</p></div>
+      {:else if error}
+        <div class="overlay error"><p>Failed to load data</p><pre>{error}</pre></div>
+      {:else if !hasData}
+        <div class="overlay"><p>No crisis indicator data found for this country.</p></div>
+      {/if}
 
-    <div bind:this={el} class="chart" class:hidden={!hasData || loading || !!error}></div>
+      <div bind:this={el} class="chart" class:hidden={!hasData || loading || !!error}></div>
 
-    {#if hasData && !loading && !error}
-      <p class="hint">
-        Hover to compare across panels · data from ACLED, IDMC, IPC, FTS
-      </p>
-    {/if}
-  </div>
+      {#if hasData && !loading && !error}
+        <p class="hint">
+          Hover to compare across panels · data from ACLED, IDMC, IPC, FTS
+        </p>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -258,6 +277,19 @@
     font-size: 12px;
   }
   .topbar.dark { border-bottom-color: rgba(255, 255, 255, 0.08); }
+
+  .back-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 3px 0;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    font-family: system-ui, sans-serif;
+  }
+  .back-btn:hover { color: var(--text); }
 
   .ctrl-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .ctrl-label { color: var(--text-muted); white-space: nowrap; }
@@ -353,7 +385,6 @@
     font-size: 14px;
     z-index: 1;
   }
-  .overlay .sub { font-size: 12px; color: var(--text-sep); }
   .overlay.error pre {
     font-size: 12px;
     color: var(--error-text);

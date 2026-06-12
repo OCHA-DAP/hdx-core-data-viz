@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import * as echarts from "echarts";
+  import FoodPriceTileGrid from "./FoodPriceTileGrid.svelte";
   import {
     fetchCountryList,
     fetchFoodPriceCategories,
@@ -21,6 +22,8 @@
   let theme = $state<"dark" | "light">("light");
   let el = $state<HTMLDivElement>();
   let chart: echarts.ECharts | undefined;
+
+  let showGrid = $state(true);
 
   $effect(() => { document.documentElement.dataset.theme = theme; });
 
@@ -55,6 +58,16 @@
     return () => { cancelled = true; };
   });
 
+  function selectCountry(code: string) {
+    locationCode = code;
+    showGrid = false;
+  }
+
+  function backToGrid() {
+    locationCode = "";
+    showGrid = true;
+  }
+
   $effect(() => {
     const _prices = prices;
     const _theme = theme;
@@ -78,7 +91,6 @@
       return;
     }
 
-    // Collect all unique months
     const monthSet = new Set<string>();
     const byCommodity = new Map<string, Map<string, number>>();
     const commodityUnit = new Map<string, string>();
@@ -182,9 +194,15 @@
 
 <div class="wrapper">
   <nav class="topbar" class:dark={theme === "dark"}>
+    {#if !showGrid}
+      <button class="back-btn" onclick={backToGrid}>← All countries</button>
+    {/if}
+
     <div class="ctrl-group">
       <label class="ctrl-label" for="country-sel">Country</label>
-      <select id="country-sel" bind:value={locationCode} disabled={countries.length === 0}>
+      <select id="country-sel" bind:value={locationCode}
+        onchange={() => { if (locationCode) showGrid = false; else showGrid = true; }}
+        disabled={countries.length === 0}>
         <option value="">Select country…</option>
         {#each countries as c}
           <option value={c.code}>{c.name}</option>
@@ -192,7 +210,7 @@
       </select>
     </div>
 
-    {#if categories.length > 0}
+    {#if !showGrid && categories.length > 0}
       <div class="ctrl-group">
         <label class="ctrl-label" for="cat-sel">Category</label>
         <select id="cat-sel" bind:value={category}>
@@ -203,14 +221,16 @@
       </div>
     {/if}
 
-    <div class="ctrl-group">
-      <label class="checkbox-label">
-        <input type="checkbox" bind:checked={normalized} />
-        Normalize (index)
-      </label>
-    </div>
+    {#if !showGrid}
+      <div class="ctrl-group">
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={normalized} />
+          Normalize (index)
+        </label>
+      </div>
+    {/if}
 
-    {#if prices.length > 0}
+    {#if prices.length > 0 && !showGrid}
       <span class="stat">{new Set(prices.map((p) => p.commodity)).size} commodities · {new Set(prices.map((p) => p.month)).size} months</span>
     {/if}
 
@@ -225,27 +245,29 @@
     </button>
   </nav>
 
-  <div class="chart-area">
-    {#if !locationCode}
-      <div class="overlay"><p>Select a country to explore food price trends.</p></div>
-    {:else if loadingCats}
-      <div class="overlay"><div class="spinner"></div><p>Loading categories…</p></div>
-    {:else if categories.length === 0 && !loadingCats}
-      <div class="overlay"><p>No food price data available for this country.</p></div>
-    {:else if loading}
-      <div class="overlay"><div class="spinner"></div><p>Loading prices…</p></div>
-    {:else if error}
-      <div class="overlay error"><p>Failed to load data</p><pre>{error}</pre></div>
-    {:else if prices.length === 0 && category}
-      <div class="overlay"><p>No price data for "{category}" in this country.</p></div>
-    {/if}
+  {#if showGrid}
+    <FoodPriceTileGrid {theme} onSelect={selectCountry} />
+  {:else}
+    <div class="chart-area">
+      {#if loadingCats}
+        <div class="overlay"><div class="spinner"></div><p>Loading categories…</p></div>
+      {:else if categories.length === 0 && !loadingCats}
+        <div class="overlay"><p>No food price data available for this country.</p></div>
+      {:else if loading}
+        <div class="overlay"><div class="spinner"></div><p>Loading prices…</p></div>
+      {:else if error}
+        <div class="overlay error"><p>Failed to load data</p><pre>{error}</pre></div>
+      {:else if prices.length === 0 && category}
+        <div class="overlay"><p>No price data for "{category}" in this country.</p></div>
+      {/if}
 
-    <div bind:this={el} class="chart" class:hidden={!prices.length || loading || !!error || !locationCode}></div>
+      <div bind:this={el} class="chart" class:hidden={!prices.length || loading || !!error || !locationCode}></div>
 
-    {#if prices.length > 0 && !loading && !error}
-      <p class="hint">WFP market price data · averaged across markets per month</p>
-    {/if}
-  </div>
+      {#if prices.length > 0 && !loading && !error}
+        <p class="hint">WFP market price data · averaged across markets per month</p>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -268,6 +290,19 @@
     font-size: 12px;
   }
   .topbar.dark { border-bottom-color: rgba(255, 255, 255, 0.08); }
+
+  .back-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 3px 0;
+    flex-shrink: 0;
+    transition: color 0.15s;
+    font-family: system-ui, sans-serif;
+  }
+  .back-btn:hover { color: var(--text); }
 
   .ctrl-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .ctrl-label { color: var(--text-muted); white-space: nowrap; }
