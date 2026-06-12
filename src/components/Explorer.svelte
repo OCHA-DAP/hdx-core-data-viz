@@ -26,7 +26,7 @@
   let countryName: string | undefined = $state();
   let admin1Code: string | undefined = $state(_p.get("admin1") ?? undefined);
   let admin1Name: string | undefined = $state();
-  let theme: "dark" | "light" = $state("light");
+  let theme: "dark" | "light" = $state(localStorage.getItem("theme") === "dark" ? "dark" : "light");
 
   let xVarId: string = $state(_xIds.has(_p.get("x") ?? "") ? _p.get("x")! : _xDefault);
   let yVarId: string = $state(_xIds.has(_p.get("y") ?? "") ? _p.get("y")! : _yDefault);
@@ -358,7 +358,7 @@
     <button
       class="theme-toggle"
       class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      onclick={() => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("theme", theme); }}
       aria-label="Toggle theme"
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>

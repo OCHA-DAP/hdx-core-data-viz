@@ -24,7 +24,7 @@
   let hasData = $state(false); // stays true once first data arrives
   let error = $state<string | null>(null);
   let flows = $state<FlowRow[]>([]);
-  let theme = $state<"dark" | "light">("light");
+  let theme = $state<"dark" | "light">(localStorage.getItem("theme") === "dark" ? "dark" : "light");
   let el = $state<HTMLDivElement>();
   let playing = $state(false);
   let focusedNode = $state<string | null>(null);
@@ -261,7 +261,7 @@
     <button
       class="theme-toggle"
       class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      onclick={() => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("theme", theme); }}
       aria-label="Toggle theme"
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>

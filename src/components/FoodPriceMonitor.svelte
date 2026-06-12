@@ -11,7 +11,7 @@
   let countries = $state<{ code: string; name: string }[]>([]);
   let locationCode = $state(_initCountry);
   let normalized = $state(_p.get("norm") !== "false");
-  let theme = $state<"dark" | "light">("light");
+  let theme = $state<"dark" | "light">(localStorage.getItem("theme") === "dark" ? "dark" : "light");
   let showGrid = $state(!_initCountry);
   const _urlZoom = parseInt(_p.get("zoom") ?? "", 10);
   let panelHeight = $state(Number.isFinite(_urlZoom) && _urlZoom >= 150 && _urlZoom <= 520 ? _urlZoom : 220);
@@ -97,7 +97,7 @@
     <button
       class="theme-toggle"
       class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      onclick={() => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("theme", theme); }}
       aria-label="Toggle theme"
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>

@@ -41,7 +41,7 @@
   let error: string | null = $state(null);
   let search = $state(_p.get("q") ?? "");
   let expandedCode: string | null = $state(_p.get("expanded") ?? null);
-  let theme: "dark" | "light" = $state("light");
+  let theme: "dark" | "light" = $state(localStorage.getItem("theme") === "dark" ? "dark" : "light");
 
   $effect(() => {
     updateParams({ q: search || null, expanded: expandedCode ?? null });
@@ -179,7 +179,7 @@
     <button
       class="theme-toggle"
       class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      onclick={() => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("theme", theme); }}
       aria-label="Toggle theme"
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>

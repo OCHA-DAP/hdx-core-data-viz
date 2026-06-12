@@ -19,7 +19,7 @@
   let hasData = $state(false);
   let loading = $state(false);
   let error = $state<string | null>(null);
-  let theme = $state<"dark" | "light">("light");
+  let theme = $state<"dark" | "light">(localStorage.getItem("theme") === "dark" ? "dark" : "light");
   let el = $state<HTMLDivElement>();
   let chart: echarts.ECharts | undefined;
 
@@ -242,7 +242,7 @@
     <button
       class="theme-toggle"
       class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      onclick={() => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("theme", theme); }}
       aria-label="Toggle theme"
     >
       <span class="toggle-track"><span class="toggle-thumb"></span></span>
