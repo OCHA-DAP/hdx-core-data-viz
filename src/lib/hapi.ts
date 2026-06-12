@@ -864,6 +864,265 @@ export async function fetchSubNationalAvailability(
   return parseAvailRows(await conn.query(sql), level);
 }
 
+// ── Country list ─────────────────────────────────────────────────────────────
+
+export interface CountryRow {
+  code: string;
+  name: string;
+  hasHrp: boolean;
+  inGho: boolean;
+}
+
+let countryListCache: CountryRow[] | null = null;
+
+export async function fetchCountryList(): Promise<CountryRow[]> {
+  if (countryListCache) return countryListCache;
+  const conn = await getConn();
+  const url = `${BASE}/metadata/location.parquet`;
+  const result = await conn.query(
+    `SELECT code, name, has_hrp, in_gho FROM read_parquet('${url}') ORDER BY name`,
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  countryListCache = result.toArray().map((r: any) => ({
+    code: String(r.code),
+    name: String(r.name),
+    hasHrp: Boolean(r.has_hrp),
+    inGho: Boolean(r.in_gho),
+  }));
+  return countryListCache!;
+}
+
+// ── Food price monitor ────────────────────────────────────────────────────────
+
+export interface PricePoint {
+  commodity: string;
+  unit: string;
+  currency: string;
+  month: string; // "YYYY-MM"
+  price: number;
+}
+
+const PRICE_BASE = `${BASE}/food-security-nutrition-poverty/food-prices-market-monitor`;
+const priceCache = new Map<string, PricePoint[]>();
+const priceCatCache = new Map<string, string[]>();
+
+export async function fetchFoodPriceCategories(locationCode: string): Promise<string[]> {
+  if (priceCatCache.has(locationCode)) return priceCatCache.get(locationCode)!;
+  const conn = await getConn();
+  const cats = new Set<string>();
+  for (const lvl of [0, 1, 2]) {
+    try {
+      const result = await conn.query(
+        `SELECT DISTINCT commodity_category
+         FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
+         WHERE location_code = '${locationCode}' AND commodity_category IS NOT NULL
+         ORDER BY commodity_category`,
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of result.toArray()) cats.add(String(r.commodity_category));
+    } catch { /* level not available for this country */ }
+  }
+  const sorted = [...cats].sort();
+  priceCatCache.set(locationCode, sorted);
+  return sorted;
+}
+
+export async function fetchFoodPrices(locationCode: string, commodityCategory: string): Promise<PricePoint[]> {
+  const key = `${locationCode}|${commodityCategory}`;
+  if (priceCache.has(key)) return priceCache.get(key)!;
+  const conn = await getConn();
+  const esc = commodityCategory.replace(/'/g, "''");
+  // Collect raw price rows from all available admin levels
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allRaw: any[] = [];
+  for (const lvl of [0, 1, 2]) {
+    try {
+      const result = await conn.query(
+        `SELECT commodity_name, unit, currency_code, reference_period_start, price
+         FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
+         WHERE location_code = '${locationCode}' AND commodity_category = '${esc}'
+           AND price_flag = 'actual' AND price > 0`,
+      );
+      allRaw.push(...result.toArray());
+    } catch { /* level not available */ }
+  }
+  if (allRaw.length === 0) {
+    priceCache.set(key, []);
+    return [];
+  }
+  // Find top 8 commodities by frequency
+  const freq = new Map<string, number>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const r of allRaw) freq.set(String(r.commodity_name), (freq.get(String(r.commodity_name)) ?? 0) + 1);
+  const top8 = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k);
+  const top8Set = new Set(top8);
+  // Aggregate by commodity + month
+  const aggKey = (name: string, month: string, unit: string, currency: string) => `${name}||${month}||${unit}||${currency}`;
+  const agg = new Map<string, { sum: number; count: number; commodity: string; unit: string; currency: string; month: string }>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const r of allRaw) {
+    const name = String(r.commodity_name);
+    if (!top8Set.has(name)) continue;
+    const month = String(r.reference_period_start).slice(0, 7); // "YYYY-MM"
+    const unit = String(r.unit);
+    const currency = String(r.currency_code);
+    const k = aggKey(name, month, unit, currency);
+    const existing = agg.get(k);
+    if (existing) {
+      existing.sum += Number(r.price);
+      existing.count += 1;
+    } else {
+      agg.set(k, { sum: Number(r.price), count: 1, commodity: name, unit, currency, month });
+    }
+  }
+  const rows: PricePoint[] = [...agg.values()]
+    .map(({ sum, count, commodity, unit, currency, month }) => ({
+      commodity, unit, currency, month, price: +(sum / count).toFixed(4),
+    }))
+    .sort((a, b) => a.commodity.localeCompare(b.commodity) || a.month.localeCompare(b.month));
+  priceCache.set(key, rows);
+  return rows;
+}
+
+// ── Crisis timeline ───────────────────────────────────────────────────────────
+
+export interface TimelinePoint {
+  year: number;
+  conflictFatalities: number | null;
+  idpPopulation: number | null;
+  foodPhase3Pct: number | null;
+  fundingGapPct: number | null;
+}
+
+const timelineCache = new Map<string, TimelinePoint[]>();
+
+export async function fetchCrisisTimeline(locationCode: string): Promise<TimelinePoint[]> {
+  if (timelineCache.has(locationCode)) return timelineCache.get(locationCode)!;
+  const conn = await getConn();
+  const loc = locationCode;
+
+  // Run 4 queries in parallel; individual failures leave that indicator empty (null)
+  const [conflictRows, idpRows, foodRows, fundingRows] = await Promise.all([
+    // Conflict: ACLED events are at admin_level=2, aggregate to country
+    conn.query(`
+      SELECT CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year, SUM(fatalities) AS v
+      FROM read_parquet('${BASE}/coordination-context/conflict-events/admin_level=2/part-0.parquet', hive_partitioning=false)
+      WHERE location_code = '${loc}'
+      GROUP BY year ORDER BY year
+    `).catch(() => null),
+    // IDPs: country-level (admin_level=0)
+    conn.query(`
+      SELECT CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year, SUM(population) AS v
+      FROM read_parquet('${BASE}/affected-people/idps/admin_level=0/part-0.parquet', hive_partitioning=false)
+      WHERE location_code = '${loc}'
+      GROUP BY year ORDER BY year
+    `).catch(() => null),
+    // Food security Phase 3+: latest assessment per year
+    conn.query(`
+      SELECT year, LEAST(1.0, SUM(population_fraction_in_phase)) AS v
+      FROM (
+        SELECT CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+               reference_period_start, population_fraction_in_phase,
+               MAX(reference_period_start) OVER (
+                 PARTITION BY CAST(LEFT(reference_period_start, 4) AS INTEGER)
+               ) AS latest_ref
+        FROM read_parquet('${BASE}/food-security-nutrition-poverty/food-security/admin_level=0/part-0.parquet', hive_partitioning=false)
+        WHERE location_code = '${loc}' AND ipc_type = 'current' AND ipc_phase IN ('3','4','5')
+      )
+      WHERE reference_period_start = latest_ref
+      GROUP BY year ORDER BY year
+    `).catch(() => null),
+    // Funding gap: flat file
+    conn.query(`
+      SELECT CAST(LEFT(reference_period_start, 4) AS INTEGER) AS year,
+             GREATEST(0.0, (1.0 - SUM(funding_usd) / NULLIF(SUM(requirements_usd), 0)) * 100) AS v
+      FROM read_parquet('${BASE}/coordination-context/funding.parquet', hive_partitioning=false)
+      WHERE location_code = '${loc}'
+      GROUP BY year ORDER BY year
+    `).catch(() => null),
+  ]);
+
+  // Build year-keyed maps from each result
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function toMap(result: any): Map<number, number> {
+    const m = new Map<number, number>();
+    if (!result) return m;
+    for (const r of result.toArray()) m.set(Number(r.year), Number(r.v));
+    return m;
+  }
+
+  const conflict = toMap(conflictRows);
+  const idps = toMap(idpRows);
+  const food = toMap(foodRows);
+  const funding = toMap(fundingRows);
+
+  const yearSet = new Set([...conflict.keys(), ...idps.keys(), ...food.keys(), ...funding.keys()]);
+  const rows: TimelinePoint[] = [...yearSet].sort((a, b) => a - b).map((year) => ({
+    year,
+    conflictFatalities: conflict.has(year) ? conflict.get(year)! : null,
+    idpPopulation: idps.has(year) ? idps.get(year)! : null,
+    foodPhase3Pct: food.has(year) ? food.get(year)! * 100 : null,
+    fundingGapPct: funding.has(year) ? funding.get(year)! : null,
+  }));
+
+  timelineCache.set(locationCode, rows);
+  return rows;
+}
+
+// ── IPC phase distribution ────────────────────────────────────────────────────
+
+export interface IpcPhaseRow {
+  locationName: string;
+  locationCode: string;
+  phase: string;
+  fraction: number;
+  year: number;
+}
+
+const ipcCache = new Map<string, IpcPhaseRow[]>();
+
+export async function fetchIpcPhases(year: number | null): Promise<IpcPhaseRow[]> {
+  const key = year == null ? "latest" : String(year);
+  if (ipcCache.has(key)) return ipcCache.get(key)!;
+  const conn = await getConn();
+  const foodUrl = `${BASE}/food-security-nutrition-poverty/food-security/admin_level=0/part-0.parquet`;
+  const yearCond =
+    year != null
+      ? `AND CAST(LEFT(reference_period_start, 4) AS INTEGER) = ${year}`
+      : "";
+  const sql =
+    year != null
+      ? `SELECT location_name, location_code, ipc_phase,
+               SUM(population_fraction_in_phase) AS fraction, ${year} AS year
+         FROM read_parquet('${foodUrl}', hive_partitioning=false)
+         WHERE ipc_type = 'current' AND ipc_phase IN ('1','2','3','4','5') ${yearCond}
+         GROUP BY location_name, location_code, ipc_phase ORDER BY location_name, ipc_phase`
+      : `WITH latest AS (
+           SELECT location_code, MAX(CAST(LEFT(reference_period_start, 4) AS INTEGER)) AS max_year
+           FROM read_parquet('${foodUrl}', hive_partitioning=false)
+           WHERE ipc_type = 'current' GROUP BY location_code
+         )
+         SELECT f.location_name, f.location_code, f.ipc_phase,
+                SUM(f.population_fraction_in_phase) AS fraction, l.max_year AS year
+         FROM read_parquet('${foodUrl}', hive_partitioning=false) f
+         JOIN latest l ON f.location_code = l.location_code
+           AND CAST(LEFT(f.reference_period_start, 4) AS INTEGER) = l.max_year
+         WHERE f.ipc_type = 'current' AND f.ipc_phase IN ('1','2','3','4','5')
+         GROUP BY f.location_name, f.location_code, f.ipc_phase, l.max_year
+         ORDER BY f.location_name, f.ipc_phase`;
+  const result = await conn.query(sql);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: IpcPhaseRow[] = result.toArray().map((r: any) => ({
+    locationName: String(r.location_name),
+    locationCode: String(r.location_code),
+    phase: String(r.ipc_phase),
+    fraction: Number(r.fraction),
+    year: Number(r.year),
+  }));
+  ipcCache.set(key, rows);
+  return rows;
+}
+
 // ── Refugee flow query ────────────────────────────────────────────────────────
 
 export interface FlowRow {
