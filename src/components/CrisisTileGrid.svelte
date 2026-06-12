@@ -47,7 +47,7 @@
 <div class="tile-grid-wrap" class:dark={theme === "dark"}>
   <div class="tile-header">
     <h2>Crisis indicators by country</h2>
-    <span class="sub">Sorted by IPC Phase 3+ change · click a country to view full timeline</span>
+    <span class="sub">Sorted alphabetically · click a country to view full timeline</span>
   </div>
 
   {#if loading}
@@ -62,7 +62,7 @@
     <div class="err">No data available.</div>
   {:else}
     <div class="tile-grid">
-      {#each rows as row}
+      {#each [...rows].sort((a, b) => a.name.localeCompare(b.name)) as row}
         {@const sparkVals = row.ipcByPeriod.length >= 2
           ? row.ipcByPeriod.map((p) => p.phase3plus)
           : row.conflictByYear.map((p) => p.fatalities)}

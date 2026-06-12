@@ -39,7 +39,7 @@
 <div class="tile-grid-wrap" class:dark={theme === "dark"}>
   <div class="tile-header">
     <h2>Food price trends by country</h2>
-    <span class="sub">Composite price index (base=100 at first data point) · sorted by 12-month change · click to explore</span>
+    <span class="sub">Composite price index (base=100 at first data point) · sorted alphabetically · click to explore</span>
   </div>
 
   {#if loading}
@@ -54,7 +54,7 @@
     <div class="err">No data available.</div>
   {:else}
     <div class="tile-grid">
-      {#each rows as row}
+      {#each [...rows].sort((a, b) => a.name.localeCompare(b.name)) as row}
         {@const sparkVals = row.byMonth.map((m) => m.index)}
         {@const sparkPath = sparklinePath(sparkVals, 120, 36)}
         {@const rising = (row.change12m ?? 0) > 0}
