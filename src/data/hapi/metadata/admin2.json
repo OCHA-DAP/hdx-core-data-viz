@@ -7,7 +7,7 @@
   "id": "metadata/admin2",
   "geometry": null,
   "properties": {
-    "updated": "2026-06-10T18:17:30.754672+00:00",
+    "updated": "2026-06-11T17:50:07.260559+00:00",
     "theme": "metadata",
     "table:row_count": 21099,
     "table:columns": [
@@ -60,7 +60,7 @@
         "type": "int64"
       }
     ],
-    "datetime": "2026-06-10T18:17:30.754672Z"
+    "datetime": "2026-06-11T17:50:07.260559Z"
   },
   "links": [
     {

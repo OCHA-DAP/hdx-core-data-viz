@@ -270,10 +270,7 @@ async function urlExists(url: string): Promise<boolean> {
 
 // ── URL helpers ───────────────────────────────────────────────────────────────
 
-function partUrl(path: string, level: AdminLevel, locationCode?: string): string {
-  if (level > 0 && locationCode) {
-    return `${BASE}/${path}/admin_level=${level}/location_code=${locationCode}/part-0.parquet`;
-  }
+function partUrl(path: string, level: AdminLevel): string {
   return `${BASE}/${path}/admin_level=${level}/part-0.parquet`;
 }
 
@@ -283,17 +280,27 @@ function partUrl(path: string, level: AdminLevel, locationCode?: string): string
 // (neither admin_level=1 nor the admin_level=2 fallback). Call this after the
 // level-0 chart loads so bubbles can be faded before the user clicks them.
 export async function fetchNonDrillableCodes(codes: string[]): Promise<Set<string>> {
+  if (codes.length === 0) return new Set();
   const pop = "geography-infrastructure/baseline-population";
-  const results = await Promise.all(
-    codes.map(async (code) => {
-      const [ok1, ok2] = await Promise.all([
-        urlExists(partUrl(pop, 1, code)),
-        urlExists(partUrl(pop, 2, code)),
-      ]);
-      return [code, ok1 || ok2] as const;
-    }),
-  );
-  return new Set(results.filter(([, ok]) => !ok).map(([code]) => code));
+  const url1 = partUrl(pop, 1);
+  const url2 = partUrl(pop, 2);
+  const [ok1, ok2] = await Promise.all([urlExists(url1), urlExists(url2)]);
+  if (!ok1 && !ok2) return new Set(codes);
+  const conn = await getConn();
+  const inList = codes.map((c) => `'${c}'`).join(", ");
+  const parts: string[] = [];
+  if (ok1)
+    parts.push(
+      `SELECT DISTINCT location_code FROM read_parquet('${url1}', hive_partitioning=false) WHERE location_code IN (${inList})`,
+    );
+  if (ok2)
+    parts.push(
+      `SELECT DISTINCT location_code FROM read_parquet('${url2}', hive_partitioning=false) WHERE location_code IN (${inList})`,
+    );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await conn.query(parts.join(" UNION "));
+  const drillable = new Set(result.toArray().map((r: any) => String(r.location_code)));
+  return new Set(codes.filter((c) => !drillable.has(c)));
 }
 
 // ── Main query ────────────────────────────────────────────────────────────────
@@ -326,61 +333,142 @@ export async function buildBubbleData(
   const needsRefugees = level === 0 && ids.some((id) => id.startsWith("refugees_"));
   const needsRainfall = level > 0 && ids.includes("rainfall_anomaly_pct");
 
-  const popUrl = partUrl("geography-infrastructure/baseline-population", level, parentCode);
-  const conflictUrl = partUrl("coordination-context/conflict-events", level, parentCode);
-  const foodUrl = partUrl("food-security-nutrition-poverty/food-security", level, parentCode);
-  const idpUrl = partUrl("affected-people/idps", level, parentCode);
-  const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level, parentCode);
+  const popUrl = partUrl("geography-infrastructure/baseline-population", level);
+  const conflictUrl = partUrl("coordination-context/conflict-events", level);
+  const foodUrl = partUrl("food-security-nutrition-poverty/food-security", level);
+  const idpUrl = partUrl("affected-people/idps", level);
+  const povertyUrl = partUrl("food-security-nutrition-poverty/poverty-rate", level);
   const riskUrl = `${BASE}/coordination-context/national-risk.parquet`;
   const fundingUrl = `${BASE}/coordination-context/funding.parquet`;
-  const humNeedsUrl = partUrl("affected-people/humanitarian-needs", level, parentCode);
-  const humNeedsFbUrl =
-    level === 1 ? partUrl("affected-people/humanitarian-needs", 2, parentCode) : null;
-  const rainfallUrl = needsRainfall ? partUrl("climate/rainfall", level, parentCode) : null;
-  const rainfallFbUrl =
-    level === 1 && needsRainfall ? partUrl("climate/rainfall", 2, parentCode) : null;
+  const humNeedsUrl = partUrl("affected-people/humanitarian-needs", level);
+  let humNeedsFbUrl: string | null = level < 2 ? partUrl("affected-people/humanitarian-needs", (level + 1) as AdminLevel) : null;
+  const rainfallUrl = needsRainfall ? partUrl("climate/rainfall", level) : null;
+  const rainfallFbUrl = level === 1 && needsRainfall ? partUrl("climate/rainfall", 2) : null;
   const refugeesUrl = `${BASE}/affected-people/refugees-persons-of-concern.parquet`;
 
-  // For sub-national levels, not every country has data for every dataset.
-  // Summable datasets (pop, conflict, idps) fall back to admin_level=2 aggregated to
-  // admin_level=1 when a direct admin_level=1 file is missing.
+  // Summable datasets fall back to finer admin levels when the target level file is missing.
+  // These are initialised for level 1/2; the level-0 block overrides them after cascade checks.
   // Fraction-based datasets (food, poverty) cannot be safely summed, so they stay empty.
-  const popFbUrl =
-    level === 1 ? partUrl("geography-infrastructure/baseline-population", 2, parentCode) : null;
-  const conflictFbUrl =
-    level === 1 ? partUrl("coordination-context/conflict-events", 2, parentCode) : null;
-  const idpFbUrl = level === 1 ? partUrl("affected-people/idps", 2, parentCode) : null;
+  const popFbUrl = level === 1 ? partUrl("geography-infrastructure/baseline-population", 2) : null;
+  let conflictFbUrl: string | null = level < 2 ? partUrl("coordination-context/conflict-events", (level + 1) as AdminLevel) : null;
+  let idpFbUrl: string | null = level < 2 ? partUrl("affected-people/idps", (level + 1) as AdminLevel) : null;
 
-  const [
-    popOk,
-    conflictOk,
-    foodOk,
-    idpOk,
-    povertyOk,
-    popFbOk,
-    conflictFbOk,
-    idpFbOk,
-    humNeedsOk,
-    humNeedsFbOk,
-    rainfallOk,
-    rainfallFbOk,
-  ] =
-    level === 0
-      ? [true, true, true, true, true, false, false, false, true, false, false, false]
-      : await Promise.all([
-          urlExists(popUrl),
-          needsConflict ? urlExists(conflictUrl) : Promise.resolve(false),
-          needsFood ? urlExists(foodUrl) : Promise.resolve(false),
-          needsIDPs ? urlExists(idpUrl) : Promise.resolve(false),
-          needsPoverty ? urlExists(povertyUrl) : Promise.resolve(false),
-          popFbUrl ? urlExists(popFbUrl) : Promise.resolve(false),
-          conflictFbUrl && needsConflict ? urlExists(conflictFbUrl) : Promise.resolve(false),
-          idpFbUrl && needsIDPs ? urlExists(idpFbUrl) : Promise.resolve(false),
-          needsHumNeeds ? urlExists(humNeedsUrl) : Promise.resolve(false),
-          needsHumNeeds && humNeedsFbUrl ? urlExists(humNeedsFbUrl) : Promise.resolve(false),
-          needsRainfall && rainfallUrl ? urlExists(rainfallUrl) : Promise.resolve(false),
-          needsRainfall && rainfallFbUrl ? urlExists(rainfallFbUrl) : Promise.resolve(false),
-        ]);
+  // At level 0, summable datasets check admin_level=0 and fall back to admin_level=1 if missing
+  // (the level-0 SQL already groups by location_code so aggregation is correct). At level 1,
+  // data-availability tells us per-country which datasets and levels are present — urlExists
+  // can't do this since all countries now share a single file per level. At level 2 there is
+  // no fallback, so urlExists on the shared file suffices.
+  let popOk: boolean,
+    conflictOk: boolean,
+    foodOk: boolean,
+    idpOk: boolean,
+    povertyOk: boolean,
+    popFbOk: boolean,
+    conflictFbOk: boolean,
+    idpFbOk: boolean,
+    humNeedsOk: boolean,
+    humNeedsFbOk: boolean,
+    rainfallOk: boolean,
+    rainfallFbOk: boolean;
+
+  if (level === 0) {
+    // For summable datasets: admin_level=0 → admin_level=1 → admin_level=2.
+    // Fraction-based datasets (food, poverty) are hardcoded true — they can't be aggregated.
+    const conflictL1Url = partUrl("coordination-context/conflict-events", 1);
+    const conflictL2Url = partUrl("coordination-context/conflict-events", 2);
+    const idpL1Url = partUrl("affected-people/idps", 1);
+    const idpL2Url = partUrl("affected-people/idps", 2);
+    const humNeedsL1Url = partUrl("affected-people/humanitarian-needs", 1);
+    const humNeedsL2Url = partUrl("affected-people/humanitarian-needs", 2);
+
+    const [conflictL0Ok, idpL0Ok, humNeedsL0Ok] = await Promise.all([
+      needsConflict ? urlExists(conflictUrl) : Promise.resolve(false),
+      needsIDPs ? urlExists(idpUrl) : Promise.resolve(false),
+      needsHumNeeds ? urlExists(humNeedsUrl) : Promise.resolve(false),
+    ]);
+    const [conflictL1Ok, idpL1Ok, humNeedsL1Ok] = await Promise.all([
+      needsConflict && !conflictL0Ok ? urlExists(conflictL1Url) : Promise.resolve(false),
+      needsIDPs && !idpL0Ok ? urlExists(idpL1Url) : Promise.resolve(false),
+      needsHumNeeds && !humNeedsL0Ok ? urlExists(humNeedsL1Url) : Promise.resolve(false),
+    ]);
+    const [conflictL2Ok, idpL2Ok, humNeedsL2Ok] = await Promise.all([
+      needsConflict && !conflictL0Ok && !conflictL1Ok ? urlExists(conflictL2Url) : Promise.resolve(false),
+      needsIDPs && !idpL0Ok && !idpL1Ok ? urlExists(idpL2Url) : Promise.resolve(false),
+      needsHumNeeds && !humNeedsL0Ok && !humNeedsL1Ok ? urlExists(humNeedsL2Url) : Promise.resolve(false),
+    ]);
+
+    // Override fallback URLs to point to whichever level was found
+    conflictFbUrl = conflictL1Ok ? conflictL1Url : conflictL2Ok ? conflictL2Url : null;
+    idpFbUrl = idpL1Ok ? idpL1Url : idpL2Ok ? idpL2Url : null;
+    humNeedsFbUrl = humNeedsL1Ok ? humNeedsL1Url : humNeedsL2Ok ? humNeedsL2Url : null;
+
+    [
+      popOk,
+      conflictOk,
+      foodOk,
+      idpOk,
+      povertyOk,
+      popFbOk,
+      conflictFbOk,
+      idpFbOk,
+      humNeedsOk,
+      humNeedsFbOk,
+      rainfallOk,
+      rainfallFbOk,
+    ] = [
+      true, conflictL0Ok, true, idpL0Ok, true, false,
+      conflictL1Ok || conflictL2Ok, idpL1Ok || idpL2Ok,
+      humNeedsL0Ok, humNeedsL1Ok || humNeedsL2Ok,
+      false, false,
+    ];
+  } else if (level === 1) {
+    const [a1, a2] = await Promise.all([
+      fetchSubNationalAvailability([parentCode!], 1),
+      fetchSubNationalAvailability([parentCode!], 2),
+    ]);
+    const avail1 = new Set(a1.map((r) => r.subcategory));
+    const avail2 = new Set(a2.map((r) => r.subcategory));
+    popOk = avail1.has("baseline-population");
+    conflictOk = needsConflict && avail1.has("conflict-events");
+    foodOk = needsFood && avail1.has("food-security");
+    idpOk = needsIDPs && avail1.has("idps");
+    povertyOk = needsPoverty && avail1.has("poverty-rate");
+    popFbOk = !popOk && avail2.has("baseline-population");
+    conflictFbOk = needsConflict && !conflictOk && avail2.has("conflict-events");
+    idpFbOk = needsIDPs && !idpOk && avail2.has("idps");
+    humNeedsOk = needsHumNeeds && avail1.has("humanitarian-needs");
+    humNeedsFbOk = needsHumNeeds && !humNeedsOk && avail2.has("humanitarian-needs");
+    rainfallOk = needsRainfall && avail1.has("rainfall");
+    rainfallFbOk = needsRainfall && !rainfallOk && avail2.has("rainfall");
+  } else {
+    [
+      popOk,
+      conflictOk,
+      foodOk,
+      idpOk,
+      povertyOk,
+      popFbOk,
+      conflictFbOk,
+      idpFbOk,
+      humNeedsOk,
+      humNeedsFbOk,
+      rainfallOk,
+      rainfallFbOk,
+    ] = await Promise.all([
+      urlExists(popUrl),
+      needsConflict ? urlExists(conflictUrl) : Promise.resolve(false),
+      needsFood ? urlExists(foodUrl) : Promise.resolve(false),
+      needsIDPs ? urlExists(idpUrl) : Promise.resolve(false),
+      needsPoverty ? urlExists(povertyUrl) : Promise.resolve(false),
+      Promise.resolve(false),
+      Promise.resolve(false),
+      Promise.resolve(false),
+      needsHumNeeds ? urlExists(humNeedsUrl) : Promise.resolve(false),
+      Promise.resolve(false),
+      needsRainfall && rainfallUrl ? urlExists(rainfallUrl) : Promise.resolve(false),
+      Promise.resolve(false),
+    ]);
+  }
 
   const popIsAdmin2 = !popOk && popFbOk;
   const effectivePopUrl = popOk ? popUrl : popFbOk ? popFbUrl! : null;
@@ -395,13 +483,11 @@ export async function buildBubbleData(
       level === 0 ? "available" : popOk ? "available" : popIsAdmin2 ? "aggregated" : "unavailable",
     conflict: !needsConflict
       ? "not-needed"
-      : level === 0
+      : conflictOk
         ? "available"
-        : conflictOk
-          ? "available"
-          : conflictFbOk
-            ? "aggregated"
-            : "unavailable",
+        : conflictFbOk
+          ? "aggregated"
+          : "unavailable",
     food: !needsFood
       ? "not-needed"
       : level === 0
@@ -727,9 +813,8 @@ WHERE p.name IS NOT NULL
 
 let availabilityCache: AvailabilityRow[] | null = null;
 
-function availUrl(level: number, locationCode?: string): string {
-  if (level === 0) return `${BASE}/metadata/data-availability/admin_level=0/part-0.parquet`;
-  return `${BASE}/metadata/data-availability/admin_level=${level}/location_code=${locationCode}/part-0.parquet`;
+function availUrl(level: number): string {
+  return `${BASE}/metadata/data-availability/admin_level=${level}/part-0.parquet`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -757,47 +842,24 @@ export async function fetchAvailabilityMatrix(): Promise<AvailabilityRow[]> {
     FROM read_parquet('${availUrl(0)}', hive_partitioning=false)
     ORDER BY location_name, category, subcategory
   `;
+
   const rows = parseAvailRows(await conn.query(sql), 0);
   availabilityCache = rows;
   return rows;
 }
 
-// Checks which of the given country codes have sub-national availability data
-// at the given level, then fetches those files in one UNION ALL query.
-// If a file causes a DuckDB error (some small files fail in WASM over HTTP),
-// the offending code is extracted from the error message and removed, then
-// the query is retried until it succeeds or no valid codes remain.
 export async function fetchSubNationalAvailability(
   locationCodes: string[],
   level: 1 | 2,
 ): Promise<AvailabilityRow[]> {
-  const existChecks = await Promise.all(
-    locationCodes.map(async (code) => ((await urlExists(availUrl(level, code))) ? code : null)),
-  );
-  let candidates = existChecks.filter(Boolean) as string[];
-  if (candidates.length === 0) return [];
-
+  if (locationCodes.length === 0) return [];
   const conn = await getConn();
-  const buildUnion = (codes: string[]) =>
-    codes
-      .map(
-        (code) =>
-          `SELECT location_code, location_name, category, subcategory, hapi_updated_date FROM read_parquet('${availUrl(level, code)}', hive_partitioning=false)`,
-      )
-      .join(" UNION ALL ");
-
-  for (let attempt = 0; attempt < 20 && candidates.length > 0; attempt++) {
-    try {
-      return parseAvailRows(await conn.query(buildUnion(candidates)), level);
-    } catch (e) {
-      // Extract the bad location code from the URL embedded in the error message
-      const match = String(e).match(/location_code=([A-Z]{2,3})\//);
-      if (match) {
-        candidates = candidates.filter((c) => c !== match[1]);
-      } else {
-        break;
-      }
-    }
-  }
-  return [];
+  const inList = locationCodes.map((c) => `'${c}'`).join(", ");
+  const sql = `
+    SELECT location_code, location_name, category, subcategory, hapi_updated_date
+    FROM read_parquet('${availUrl(level)}', hive_partitioning=false)
+    WHERE location_code IN (${inList})
+    ORDER BY location_name, category, subcategory
+  `;
+  return parseAvailRows(await conn.query(sql), level);
 }

@@ -27,7 +27,7 @@
     },
     {
       "rel": "item",
-      "href": "https://data.source.coop/hdx/hapi/coordination-context/operational-presence.json",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/conflict-events.json",
       "type": "application/geo+json"
     },
     {
@@ -37,19 +37,19 @@
     },
     {
       "rel": "item",
-      "href": "https://data.source.coop/hdx/hapi/coordination-context/conflict-events.json",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/national-risk.json",
       "type": "application/geo+json"
     },
     {
       "rel": "item",
-      "href": "https://data.source.coop/hdx/hapi/coordination-context/national-risk.json",
+      "href": "https://data.source.coop/hdx/hapi/coordination-context/operational-presence.json",
       "type": "application/geo+json"
     }
   ],
   "stac_extensions": [
     "https://stac-extensions.github.io/table/v1.2.0/schema.json"
   ],
-  "updated": "2026-06-10T18:17:30.754672+00:00",
+  "updated": "2026-06-11T17:50:07.260559+00:00",
   "item_assets": {
     "data": {
       "type": "application/vnd.apache.parquet",
