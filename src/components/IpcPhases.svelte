@@ -90,8 +90,7 @@
 
 <div class="wrapper">
   <nav class="topbar" class:dark={theme === "dark"}>
-    <div class="ctrl-group">
-      <span class="ctrl-label">Year</span>
+    <div class="year-ctrl">
       <button class="step-btn" onclick={() => sliderVal = Math.max(YEAR_MIN, sliderVal - 1)} disabled={sliderVal <= YEAR_MIN}>◀</button>
       <input
         class="year-slider"
@@ -99,7 +98,7 @@
         bind:value={sliderVal}
       />
       <button class="step-btn" onclick={() => sliderVal = Math.min(YEAR_LATEST, sliderVal + 1)} disabled={sliderVal >= YEAR_LATEST}>▶</button>
-      <span class="year-display">{sliderVal === YEAR_LATEST ? "Latest" : sliderVal}</span>
+      <span class="year-label">{sliderVal === YEAR_LATEST ? "Latest" : sliderVal}</span>
     </div>
 
     <div class="ctrl-group">
@@ -220,14 +219,69 @@
   .seg-opt:hover { background: var(--hover-bg); }
   .seg-opt.active { background: #f46d43; color: white; }
 
-  .year-slider { width: 120px; cursor: pointer; accent-color: #f46d43; }
-  .year-display { font-size: 12px; font-weight: 600; min-width: 36px; color: var(--text); }
+  .year-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .year-slider {
+    width: 160px;
+    height: 6px;
+    accent-color: #f46d43;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+  }
+  .year-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0, 0, 0, 0.12));
+  }
+  .year-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f46d43;
+    margin-top: -6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+  .year-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0, 0, 0, 0.12));
+  }
+  .year-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f46d43;
+    border: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+
+  .year-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 36px;
+    text-align: center;
+  }
+
   .step-btn {
-    background: none; border: 1px solid rgba(0,0,0,0.15); border-radius: 3px;
-    padding: 2px 6px; font-size: 11px; cursor: pointer; color: var(--text-muted);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 11px;
+    border-radius: 3px;
   }
   .step-btn:disabled { opacity: 0.3; cursor: default; }
-  .step-btn:not(:disabled):hover { background: var(--hover-bg); }
+  .step-btn:not(:disabled):hover { color: var(--text); background: var(--hover-bg); }
 
   .ctrl-group select {
     font-size: 12px;

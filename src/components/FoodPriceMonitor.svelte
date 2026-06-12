@@ -1,61 +1,22 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
-  import * as echarts from "echarts";
   import FoodPriceTileGrid from "./FoodPriceTileGrid.svelte";
-  import {
-    fetchCountryList,
-    fetchFoodPriceCategories,
-    fetchFoodPrices,
-    type CountryRow,
-    type PricePoint,
-  } from "../lib/hapi.js";
+  import FoodPriceCategoryCharts from "./FoodPriceCategoryCharts.svelte";
+  import { fetchFoodPriceGlobal } from "../lib/hapi.js";
 
-  let countries = $state<CountryRow[]>([]);
+  let countries = $state<{ code: string; name: string }[]>([]);
   let locationCode = $state("");
-  let categories = $state<string[]>([]);
-  let category = $state("");
-  let prices = $state<PricePoint[]>([]);
   let normalized = $state(true);
-  let loading = $state(false);
-  let loadingCats = $state(false);
-  let error = $state<string | null>(null);
   let theme = $state<"dark" | "light">("light");
-  let el = $state<HTMLDivElement>();
-  let chart: echarts.ECharts | undefined;
-
   let showGrid = $state(true);
+  let panelHeight = $state(220);
 
   $effect(() => { document.documentElement.dataset.theme = theme; });
 
   $effect(() => {
-    fetchCountryList().then((list) => { countries = list; });
-  });
-
-  $effect(() => {
-    const code = locationCode;
-    if (!code) { categories = []; category = ""; return; }
-    loadingCats = true;
-    error = null;
-    fetchFoodPriceCategories(code)
-      .then((cats) => {
-        categories = cats;
-        category = cats[0] ?? "";
-        loadingCats = false;
-      })
-      .catch((e) => { error = String(e); loadingCats = false; });
-  });
-
-  $effect(() => {
-    const code = locationCode;
-    const cat = category;
-    if (!code || !cat) { prices = []; return; }
-    let cancelled = false;
-    loading = true;
-    error = null;
-    fetchFoodPrices(code, cat)
-      .then((rows) => { if (!cancelled) { prices = rows; loading = false; } })
-      .catch((e) => { if (!cancelled) { error = String(e); loading = false; } });
-    return () => { cancelled = true; };
+    fetchFoodPriceGlobal().then((rows) => {
+      countries = rows.map((r) => ({ code: r.code, name: r.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    });
   });
 
   function selectCountry(code: string) {
@@ -67,129 +28,6 @@
     locationCode = "";
     showGrid = true;
   }
-
-  $effect(() => {
-    const _prices = prices;
-    const _theme = theme;
-    const _norm = normalized;
-    if (!el) return;
-
-    if (!chart) {
-      chart = echarts.init(el, null, { renderer: "canvas" });
-      const ro = new ResizeObserver(() => chart?.resize());
-      ro.observe(el);
-    }
-
-    const isDark = _theme === "dark";
-    const textColor = isDark ? "#aaa" : "#444";
-    const mutedColor = isDark ? "#555" : "#aaa";
-    const tooltipBg = isDark ? "#1e1e2e" : "#fff";
-    const tooltipBorder = isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)";
-
-    if (_prices.length === 0) {
-      chart.clear();
-      return;
-    }
-
-    const monthSet = new Set<string>();
-    const byCommodity = new Map<string, Map<string, number>>();
-    const commodityUnit = new Map<string, string>();
-    let currency = "";
-
-    for (const p of _prices) {
-      monthSet.add(p.month);
-      if (!byCommodity.has(p.commodity)) byCommodity.set(p.commodity, new Map());
-      byCommodity.get(p.commodity)!.set(p.month, p.price);
-      commodityUnit.set(p.commodity, p.unit);
-      if (!currency) currency = p.currency;
-    }
-
-    const months = [...monthSet].sort();
-
-    const COLORS = [
-      "#5470c6","#91cc75","#fac858","#ee6666","#73c0de",
-      "#3ba272","#fc8452","#9a60b4","#ea7ccc","#48c9b0",
-    ];
-
-    const series: echarts.SeriesOption[] = [];
-    let ci = 0;
-    for (const [commodity, monthMap] of byCommodity) {
-      const sortedMs = [...monthMap.keys()].sort();
-      const base = _norm ? (monthMap.get(sortedMs[0]) ?? 1) : 1;
-      const unit = commodityUnit.get(commodity) ?? "";
-      series.push({
-        name: commodity,
-        type: "line",
-        data: months.map((m) => {
-          const v = monthMap.get(m);
-          return v != null ? +(_norm ? (v / base) * 100 : v).toFixed(2) : null;
-        }),
-        symbol: "none",
-        lineStyle: { color: COLORS[ci % COLORS.length], width: 2 },
-        itemStyle: { color: COLORS[ci % COLORS.length] },
-        connectNulls: false,
-        tooltip: {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          valueFormatter: (v: any) =>
-            _norm
-              ? `${Number(v).toFixed(1)} (index)`
-              : `${Number(v).toFixed(2)} ${currency}/${unit}`,
-        },
-      });
-      ci++;
-    }
-
-    const countryName = countries.find((c) => c.code === locationCode)?.name ?? locationCode;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const option: any = {
-      backgroundColor: "transparent",
-      title: {
-        text: `Food prices · ${countryName}`,
-        subtext: `${category}${_norm ? " · price index (earliest = 100)" : ` · avg market price in ${currency}`}`,
-        left: "center",
-        top: 8,
-        textStyle: { color: textColor, fontSize: 13, fontWeight: "500", fontFamily: "system-ui, sans-serif" },
-        subtextStyle: { color: mutedColor, fontSize: 11, fontFamily: "system-ui, sans-serif" },
-      },
-      legend: {
-        type: "scroll",
-        bottom: 12,
-        textStyle: { color: textColor, fontSize: 11, fontFamily: "system-ui, sans-serif" },
-      },
-      tooltip: {
-        trigger: "axis",
-        backgroundColor: tooltipBg,
-        borderColor: tooltipBorder,
-        textStyle: { color: isDark ? "#ddd" : "#222", fontFamily: "system-ui, sans-serif" },
-      },
-      grid: { left: 64, right: 16, top: 64, bottom: 72 },
-      xAxis: {
-        type: "category",
-        data: months,
-        axisLabel: {
-          color: textColor,
-          interval: Math.max(0, Math.floor(months.length / 12) - 1),
-          rotate: months.length > 36 ? 30 : 0,
-          fontSize: 11,
-        },
-        axisLine: { lineStyle: { color: isDark ? "#444" : "#ddd" } },
-        axisTick: { lineStyle: { color: isDark ? "#444" : "#ddd" } },
-      },
-      yAxis: {
-        type: "value",
-        name: _norm ? "Price index" : `Price (${currency})`,
-        nameTextStyle: { color: mutedColor, fontSize: 11 },
-        axisLabel: { color: textColor, fontSize: 11 },
-        splitLine: { lineStyle: { color: isDark ? "#1e2030" : "#f0f0f0" } },
-      },
-      series,
-    };
-
-    chart.setOption(option, { notMerge: true });
-  });
-
-  onDestroy(() => { chart?.dispose(); chart = undefined; });
 </script>
 
 <div class="wrapper">
@@ -201,7 +39,7 @@
     <div class="ctrl-group">
       <label class="ctrl-label" for="country-sel">Country</label>
       <select id="country-sel" bind:value={locationCode}
-        onchange={() => { if (locationCode) showGrid = false; else showGrid = true; }}
+        onchange={() => { if (locationCode) { showGrid = false; } else backToGrid(); }}
         disabled={countries.length === 0}>
         <option value="">Select country…</option>
         {#each countries as c}
@@ -210,17 +48,6 @@
       </select>
     </div>
 
-    {#if !showGrid && categories.length > 0}
-      <div class="ctrl-group">
-        <label class="ctrl-label" for="cat-sel">Category</label>
-        <select id="cat-sel" bind:value={category}>
-          {#each categories as cat}
-            <option value={cat}>{cat}</option>
-          {/each}
-        </select>
-      </div>
-    {/if}
-
     {#if !showGrid}
       <div class="ctrl-group">
         <label class="checkbox-label">
@@ -228,10 +55,22 @@
           Normalize (index)
         </label>
       </div>
-    {/if}
 
-    {#if prices.length > 0 && !showGrid}
-      <span class="stat">{new Set(prices.map((p) => p.commodity)).size} commodities · {new Set(prices.map((p) => p.month)).size} months</span>
+      <div class="ctrl-group">
+        <span class="ctrl-label">Zoom</span>
+        <div class="zoom-ctrl">
+          <button class="step-btn" onclick={() => panelHeight = Math.max(150, panelHeight - 40)} disabled={panelHeight <= 150}>◀</button>
+          <input
+            type="range"
+            class="zoom-slider"
+            min="150"
+            max="520"
+            step="10"
+            bind:value={panelHeight}
+          />
+          <button class="step-btn" onclick={() => panelHeight = Math.min(520, panelHeight + 40)} disabled={panelHeight >= 520}>▶</button>
+        </div>
+      </div>
     {/if}
 
     <button
@@ -248,25 +87,13 @@
   {#if showGrid}
     <FoodPriceTileGrid {theme} onSelect={selectCountry} />
   {:else}
-    <div class="chart-area">
-      {#if loadingCats}
-        <div class="overlay"><div class="spinner"></div><p>Loading categories…</p></div>
-      {:else if categories.length === 0 && !loadingCats}
-        <div class="overlay"><p>No food price data available for this country.</p></div>
-      {:else if loading}
-        <div class="overlay"><div class="spinner"></div><p>Loading prices…</p></div>
-      {:else if error}
-        <div class="overlay error"><p>Failed to load data</p><pre>{error}</pre></div>
-      {:else if prices.length === 0 && category}
-        <div class="overlay"><p>No price data for "{category}" in this country.</p></div>
-      {/if}
-
-      <div bind:this={el} class="chart" class:hidden={!prices.length || loading || !!error || !locationCode}></div>
-
-      {#if prices.length > 0 && !loading && !error}
-        <p class="hint">WFP market price data · averaged across markets per month</p>
-      {/if}
-    </div>
+    <FoodPriceCategoryCharts
+      {locationCode}
+      countryName={countries.find((c) => c.code === locationCode)?.name ?? locationCode}
+      {theme}
+      {normalized}
+      {panelHeight}
+    />
   {/if}
 </div>
 
@@ -307,6 +134,71 @@
   .ctrl-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .ctrl-label { color: var(--text-muted); white-space: nowrap; }
 
+  .zoom-ctrl {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .zoom-slider {
+    width: 120px;
+    height: 6px;
+    accent-color: #f46d43;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+  }
+
+  .zoom-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0, 0, 0, 0.12));
+  }
+
+  .zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f46d43;
+    margin-top: -6px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+
+  .zoom-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--spinner-track, rgba(0, 0, 0, 0.12));
+  }
+
+  .zoom-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #f46d43;
+    border: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+
+  .step-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 11px;
+    border-radius: 3px;
+  }
+  .step-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .step-btn:not(:disabled):hover {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
   .ctrl-group select {
     font-size: 12px;
     padding: 3px 6px;
@@ -331,8 +223,6 @@
     cursor: pointer;
     white-space: nowrap;
   }
-
-  .stat { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
 
   .theme-toggle {
     margin-left: auto;
@@ -373,50 +263,4 @@
   }
   .dark .toggle-thumb { transform: translateX(16px); }
   .toggle-label { min-width: 28px; }
-
-  .chart-area { flex: 1; position: relative; min-height: 0; }
-
-  .chart { width: 100%; height: 100%; }
-  .chart.hidden { visibility: hidden; }
-
-  .overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--text-muted);
-    font-size: 14px;
-    z-index: 1;
-  }
-  .overlay.error pre {
-    font-size: 12px;
-    color: var(--error-text);
-    max-width: 600px;
-    overflow: auto;
-    white-space: pre-wrap;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--spinner-track);
-    border-top-color: #f46d43;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .hint {
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 11px;
-    color: var(--text-sep);
-    pointer-events: none;
-    white-space: nowrap;
-  }
 </style>

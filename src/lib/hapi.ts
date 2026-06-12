@@ -438,8 +438,8 @@ export async function buildBubbleData(
     idpFbOk = needsIDPs && !idpOk && avail2.has("idps");
     humNeedsOk = needsHumNeeds && avail1.has("humanitarian-needs");
     humNeedsFbOk = needsHumNeeds && !humNeedsOk && avail2.has("humanitarian-needs");
-    rainfallOk = needsRainfall && avail1.has("rainfall");
-    rainfallFbOk = needsRainfall && !rainfallOk && avail2.has("rainfall");
+    rainfallOk = needsRainfall && avail1.has("hazards-rainfall");
+    rainfallFbOk = needsRainfall && !rainfallOk && avail2.has("hazards-rainfall");
   } else {
     [
       popOk,
@@ -902,15 +902,40 @@ export interface PricePoint {
   price: number;
 }
 
+export interface FoodPriceCategoryData {
+  category: string;
+  commodities: PricePoint[];
+}
+
 const PRICE_BASE = `${BASE}/food-security-nutrition-poverty/food-prices-market-monitor`;
 const priceCache = new Map<string, PricePoint[]>();
 const priceCatCache = new Map<string, string[]>();
+const priceAllCatsCache = new Map<string, FoodPriceCategoryData[]>();
+
+// Pre-check which admin levels actually exist for food prices to avoid DuckDB
+// logging IO errors for missing files on every page load.
+let priceLevels: number[] | null = null;
+let priceLevelsPromise: Promise<number[]> | null = null;
+
+async function getFoodPriceLevels(): Promise<number[]> {
+  if (priceLevels) return priceLevels;
+  if (!priceLevelsPromise) {
+    priceLevelsPromise = Promise.all([0, 1, 2].map(async (lvl) => {
+      const ok = await urlExists(`${PRICE_BASE}/admin_level=${lvl}/part-0.parquet`);
+      return ok ? lvl : -1;
+    })).then((results) => {
+      priceLevels = results.filter((l) => l >= 0);
+      return priceLevels;
+    });
+  }
+  return priceLevelsPromise;
+}
 
 export async function fetchFoodPriceCategories(locationCode: string): Promise<string[]> {
   if (priceCatCache.has(locationCode)) return priceCatCache.get(locationCode)!;
-  const conn = await getConn();
+  const [conn, levels] = await Promise.all([getConn(), getFoodPriceLevels()]);
   const cats = new Set<string>();
-  for (const lvl of [0, 1, 2]) {
+  for (const lvl of levels) {
     try {
       const result = await conn.query(
         `SELECT DISTINCT commodity_category
@@ -930,12 +955,12 @@ export async function fetchFoodPriceCategories(locationCode: string): Promise<st
 export async function fetchFoodPrices(locationCode: string, commodityCategory: string): Promise<PricePoint[]> {
   const key = `${locationCode}|${commodityCategory}`;
   if (priceCache.has(key)) return priceCache.get(key)!;
-  const conn = await getConn();
+  const [conn, levels] = await Promise.all([getConn(), getFoodPriceLevels()]);
   const esc = commodityCategory.replace(/'/g, "''");
   // Collect raw price rows from all available admin levels
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allRaw: any[] = [];
-  for (const lvl of [0, 1, 2]) {
+  for (const lvl of levels) {
     try {
       const result = await conn.query(
         `SELECT commodity_name, unit, currency_code, reference_period_start, price
@@ -982,6 +1007,71 @@ export async function fetchFoodPrices(locationCode: string, commodityCategory: s
     .sort((a, b) => a.commodity.localeCompare(b.commodity) || a.month.localeCompare(b.month));
   priceCache.set(key, rows);
   return rows;
+}
+
+export async function fetchFoodPricesAllCategories(locationCode: string): Promise<FoodPriceCategoryData[]> {
+  if (priceAllCatsCache.has(locationCode)) return priceAllCatsCache.get(locationCode)!;
+  const [conn, levels] = await Promise.all([getConn(), getFoodPriceLevels()]);
+  const esc = locationCode.replace(/'/g, "''");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allRaw: any[] = [];
+  for (const lvl of levels) {
+    try {
+      const result = await conn.query(
+        `SELECT commodity_category, commodity_name, unit, currency_code, reference_period_start, price
+         FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
+         WHERE location_code = '${esc}' AND price_flag = 'actual' AND price > 0
+           AND commodity_category IS NOT NULL`,
+      );
+      allRaw.push(...result.toArray());
+    } catch { /* level not available */ }
+  }
+  if (allRaw.length === 0) {
+    priceAllCatsCache.set(locationCode, []);
+    return [];
+  }
+
+  // Group raw rows by category, then apply same top-8 + monthly avg logic as fetchFoodPrices
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const byCat = new Map<string, any[]>();
+  for (const r of allRaw) {
+    const cat = String(r.commodity_category);
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat)!.push(r);
+  }
+
+  const result: FoodPriceCategoryData[] = [];
+  for (const [category, rows] of byCat) {
+    const freq = new Map<string, number>();
+    for (const r of rows) freq.set(String(r.commodity_name), (freq.get(String(r.commodity_name)) ?? 0) + 1);
+    const top8 = new Set([...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k]) => k));
+
+    const aggKey = (name: string, month: string, unit: string, currency: string) => `${name}||${month}||${unit}||${currency}`;
+    const agg = new Map<string, { sum: number; count: number; commodity: string; unit: string; currency: string; month: string }>();
+    for (const r of rows) {
+      const name = String(r.commodity_name);
+      if (!top8.has(name)) continue;
+      const month = String(r.reference_period_start).slice(0, 7);
+      const unit = String(r.unit);
+      const currency = String(r.currency_code);
+      const k = aggKey(name, month, unit, currency);
+      const existing = agg.get(k);
+      if (existing) { existing.sum += Number(r.price); existing.count += 1; }
+      else agg.set(k, { sum: Number(r.price), count: 1, commodity: name, unit, currency, month });
+    }
+
+    const commodities: PricePoint[] = [...agg.values()]
+      .map(({ sum, count, commodity, unit, currency, month }) => ({
+        commodity, unit, currency, month, price: +(sum / count).toFixed(4),
+      }))
+      .sort((a, b) => a.commodity.localeCompare(b.commodity) || a.month.localeCompare(b.month));
+
+    result.push({ category, commodities });
+  }
+
+  result.sort((a, b) => a.category.localeCompare(b.category));
+  priceAllCatsCache.set(locationCode, result);
+  return result;
 }
 
 // ── Crisis timeline ───────────────────────────────────────────────────────────
@@ -1299,96 +1389,99 @@ export interface FoodPriceCountryRow {
 }
 
 let foodPriceGlobalCache: FoodPriceCountryRow[] | null = null;
+let foodPriceGlobalPromise: Promise<FoodPriceCountryRow[]> | null = null;
 
-export async function fetchFoodPriceGlobal(): Promise<FoodPriceCountryRow[]> {
-  if (foodPriceGlobalCache) return foodPriceGlobalCache;
-  const conn = await getConn();
+export function fetchFoodPriceGlobal(): Promise<FoodPriceCountryRow[]> {
+  if (foodPriceGlobalCache) return Promise.resolve(foodPriceGlobalCache);
+  if (foodPriceGlobalPromise) return foodPriceGlobalPromise;
 
-  // Run one simpler query per admin level — avoids a huge cross-level UNION ALL
-  const singleLevelSql = (lvl: number) => `
-    WITH base AS (
-      SELECT location_code, location_name, commodity_name,
-             LEFT(reference_period_start, 7) AS period,
-             AVG(price) AS avg_price
-      FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
-      WHERE price_flag = 'actual' AND price > 0
-      GROUP BY location_code, location_name, commodity_name, period
-    ),
-    first_prices AS (
-      SELECT location_code, commodity_name, avg_price AS first_price
-      FROM base
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY location_code, commodity_name ORDER BY period) = 1
-    ),
-    indexed AS (
-      SELECT b.location_code, b.location_name, b.period,
-             b.avg_price / NULLIF(fp.first_price, 0) * 100 AS price_index
-      FROM base b
-      JOIN first_prices fp ON b.location_code = fp.location_code
-        AND b.commodity_name = fp.commodity_name
-    )
-    SELECT location_code, location_name, period,
-           AVG(price_index) AS composite_index
-    FROM indexed
-    GROUP BY location_code, location_name, period
-    ORDER BY location_code, period
-  `;
+  foodPriceGlobalPromise = (async () => {
+    const [conn, levels, countries] = await Promise.all([
+      getConn(),
+      getFoodPriceLevels(),
+      fetchCountryList(),
+    ]);
 
-  const [countries, r0, r1, r2] = await Promise.all([
-    fetchCountryList(),
-    conn.query(singleLevelSql(0)).catch(() => null),
-    conn.query(singleLevelSql(1)).catch(() => null),
-    conn.query(singleLevelSql(2)).catch(() => null),
-  ]);
+    // Run one simpler query per admin level — avoids a huge cross-level UNION ALL
+    const singleLevelSql = (lvl: number) => `
+      WITH base AS (
+        SELECT location_code, location_name, commodity_name,
+               LEFT(reference_period_start, 7) AS period,
+               AVG(price) AS avg_price
+        FROM read_parquet('${PRICE_BASE}/admin_level=${lvl}/part-0.parquet', hive_partitioning=false)
+        WHERE price_flag = 'actual' AND price > 0
+        GROUP BY location_code, location_name, commodity_name, period
+      ),
+      first_prices AS (
+        SELECT location_code, commodity_name, avg_price AS first_price
+        FROM base
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY location_code, commodity_name ORDER BY period) = 1
+      ),
+      indexed AS (
+        SELECT b.location_code, b.location_name, b.period,
+               b.avg_price / NULLIF(fp.first_price, 0) * 100 AS price_index
+        FROM base b
+        JOIN first_prices fp ON b.location_code = fp.location_code
+          AND b.commodity_name = fp.commodity_name
+      )
+      SELECT location_code, location_name, period,
+             AVG(price_index) AS composite_index
+      FROM indexed
+      GROUP BY location_code, location_name, period
+      ORDER BY location_code, period
+    `;
 
-  const crisisSet = new Set(
-    countries.filter((c) => c.hasHrp || c.inGho).map((c) => c.code),
-  );
-  const nameMap = new Map(countries.map((c) => [c.code, c.name]));
+    const results = await Promise.all(
+      levels.map((lvl) => conn.query(singleLevelSql(lvl)).catch(() => null)),
+    );
 
-  // Merge results from all admin levels: keep highest composite_index per country+period
-  // (finer levels have more market coverage, so they're more representative)
-  const byCountry = new Map<string, Map<string, number>>();
-  for (const result of [r0, r1, r2]) {
-    if (!result) continue;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const r of result.toArray()) {
-      const code = String(r.location_code);
-      if (!crisisSet.has(code)) continue;
-      if (!byCountry.has(code)) byCountry.set(code, new Map());
-      const periodMap = byCountry.get(code)!;
-      const period = String(r.period);
-      const idx = Number(r.composite_index);
-      // Take the most granular level's value (last one written wins — r2 overrides r1 overrides r0)
-      periodMap.set(period, idx);
+    const crisisSet = new Set(
+      countries.filter((c) => c.hasHrp || c.inGho).map((c) => c.code),
+    );
+    const nameMap = new Map(countries.map((c) => [c.code, c.name]));
+
+    // Merge results from all admin levels; finer levels win (last write wins)
+    const byCountry = new Map<string, Map<string, number>>();
+    for (const result of results) {
+      if (!result) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const r of result.toArray()) {
+        const code = String(r.location_code);
+        if (!crisisSet.has(code)) continue;
+        if (!byCountry.has(code)) byCountry.set(code, new Map());
+        byCountry.get(code)!.set(String(r.period), Number(r.composite_index));
+      }
     }
-  }
 
-  const rows: FoodPriceCountryRow[] = [];
-  for (const [code, periodMap] of byCountry) {
-    const months = [...periodMap.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([period, index]) => ({ period, index }));
-    if (months.length < 13) continue;
+    const rows: FoodPriceCountryRow[] = [];
+    for (const [code, periodMap] of byCountry) {
+      const months = [...periodMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([period, index]) => ({ period, index }));
+      if (months.length < 13) continue;
 
-    const latestIndex = months[months.length - 1].index;
-    const ago12 = months[months.length - 13]?.index ?? null;
-    const change12m = ago12 != null ? latestIndex - ago12 : null;
+      const latestIndex = months[months.length - 1].index;
+      const ago12 = months[months.length - 13]?.index ?? null;
+      const change12m = ago12 != null ? latestIndex - ago12 : null;
 
-    rows.push({
-      code,
-      name: nameMap.get(code) ?? code,
-      byMonth: months,
-      latestIndex,
-      change12m,
-      latestPeriod: months[months.length - 1].period,
-      earliestPeriod: months[0].period,
-      sortScore: change12m != null ? Math.abs(change12m) : 0,
-    });
-  }
+      rows.push({
+        code,
+        name: nameMap.get(code) ?? code,
+        byMonth: months,
+        latestIndex,
+        change12m,
+        latestPeriod: months[months.length - 1].period,
+        earliestPeriod: months[0].period,
+        sortScore: change12m != null ? Math.abs(change12m) : 0,
+      });
+    }
 
-  rows.sort((a, b) => b.sortScore - a.sortScore);
-  foodPriceGlobalCache = rows;
-  return rows;
+    rows.sort((a, b) => b.sortScore - a.sortScore);
+    foodPriceGlobalCache = rows;
+    return rows;
+  })();
+
+  return foodPriceGlobalPromise;
 }
 
 // ── Refugee flow query ────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import {
     buildBubbleData,
     fetchNonDrillableCodes,
@@ -31,6 +32,8 @@
   let error: string | null = $state(null);
   let noDataCodes: Set<string> = $state(new Set());
   let dataAvailability: DataAvailability | null = $state(null);
+  let playing = $state(false);
+  let playTimer: ReturnType<typeof setInterval> | undefined;
 
   const years = $derived.by(() => {
     const s = new Set(
@@ -41,14 +44,6 @@
     );
     return [...s].sort((a, b) => a - b);
   });
-
-  const coverageCount = $derived(
-    data.filter((r) => r.year === selectedYear && r.x != null && r.y != null).length,
-  );
-  const totalCodes = $derived(new Set(data.map((r) => r.code)).size);
-  const entityLabel = $derived(
-    level === 0 ? "countries and territories" : level === 1 ? "regions" : "districts",
-  );
 
   const crumbs = $derived.by(() => {
     const items: { label: string; target: AdminLevel }[] = [{ label: "World", target: 0 }];
@@ -169,6 +164,30 @@
     };
   });
 
+  function stepYear(dir: 1 | -1) {
+    const idx = years.indexOf(selectedYear);
+    const next = idx + dir;
+    if (next >= 0 && next < years.length) selectedYear = years[next];
+  }
+
+  function togglePlay() {
+    if (playing) {
+      clearInterval(playTimer);
+      playTimer = undefined;
+      playing = false;
+    } else {
+      playing = true;
+      playTimer = setInterval(() => {
+        const idx = years.indexOf(selectedYear);
+        selectedYear = idx >= years.length - 1 ? (years[0] ?? selectedYear) : (years[idx + 1] ?? selectedYear);
+      }, 1500);
+    }
+  }
+
+  onDestroy(() => {
+    clearInterval(playTimer);
+  });
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && level > 0) drillTo((level - 1) as AdminLevel);
   }
@@ -177,7 +196,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="explorer">
-  <nav class="breadcrumb">
+  <nav class="topbar" class:dark={theme === "dark"}>
     <div class="crumbs">
       {#each crumbs as crumb, i (i)}
         {#if i > 0}<span class="sep">›</span>{/if}
@@ -188,13 +207,37 @@
         {/if}
       {/each}
     </div>
-    <div class="nav-right"></div>
-  </nav>
 
-  <div class="controls" class:dark={theme === "dark"}>
-    <label class="ctrl-label">
-      <span class="ctrl-name">X axis</span>
+    {#if !loading && !error && years.length > 0}
+      <div class="year-ctrl">
+        {#if years.length > 1}
+          <button class="step-btn" onclick={() => stepYear(-1)} disabled={years.indexOf(selectedYear) <= 0}>◀</button>
+          <input
+            type="range"
+            class="year-slider"
+            min={0}
+            max={years.length - 1}
+            step="1"
+            value={years.indexOf(selectedYear)}
+            oninput={(e) => {
+              const idx = parseInt((e.target as HTMLInputElement).value, 10);
+              selectedYear = years[idx] ?? selectedYear;
+            }}
+          />
+          <button class="step-btn" onclick={() => stepYear(1)} disabled={years.indexOf(selectedYear) >= years.length - 1}>▶</button>
+        {/if}
+        <span class="year-label">{selectedYear}</span>
+        <button class="play-btn" class:active={playing} onclick={togglePlay}>
+          {playing ? "■" : "▶"} {playing ? "Stop" : "Play"}
+        </button>
+      </div>
+    {/if}
+
+    <div class="ctrl-group">
+      <label class="ctrl-label" for="x-axis-sel">X axis</label>
       <select
+        id="x-axis-sel"
+        title={`${xSpec.yearNote ?? ""}${xSpec.levelNote ? ` · ${xSpec.levelNote}` : ""}${xSpec.levelOnly === 0 ? " · national level only" : xSpec.subNationalOnly ? " · sub-national only" : ""}`}
         value={xVarId}
         onchange={(e) => {
           xVarId = (e.target as HTMLSelectElement).value;
@@ -214,18 +257,13 @@
           >
         {/each}
       </select>
-      <div class="var-meta">
-        {xSpec.yearNote ?? ""}{xSpec.levelNote ? ` · ${xSpec.levelNote}` : ""}{xSpec.levelOnly === 0
-          ? " · national level only"
-          : xSpec.subNationalOnly
-            ? " · sub-national only"
-            : ""}
-      </div>
-    </label>
+    </div>
 
-    <label class="ctrl-label">
-      <span class="ctrl-name">Y axis</span>
+    <div class="ctrl-group">
+      <label class="ctrl-label" for="y-axis-sel">Y axis</label>
       <select
+        id="y-axis-sel"
+        title={`${ySpec.yearNote ?? ""}${ySpec.levelNote ? ` · ${ySpec.levelNote}` : ""}${ySpec.levelOnly === 0 ? " · national level only" : ySpec.subNationalOnly ? " · sub-national only" : ""}`}
         value={yVarId}
         onchange={(e) => {
           yVarId = (e.target as HTMLSelectElement).value;
@@ -245,18 +283,13 @@
           >
         {/each}
       </select>
-      <div class="var-meta">
-        {ySpec.yearNote ?? ""}{ySpec.levelNote ? ` · ${ySpec.levelNote}` : ""}{ySpec.levelOnly === 0
-          ? " · national level only"
-          : ySpec.subNationalOnly
-            ? " · sub-national only"
-            : ""}
-      </div>
-    </label>
+    </div>
 
-    <label class="ctrl-label">
-      <span class="ctrl-name">Bubble size</span>
+    <div class="ctrl-group">
+      <label class="ctrl-label" for="size-sel">Bubble size</label>
       <select
+        id="size-sel"
+        title={sizeSpec.yearNote ?? ""}
         value={sizeVarId}
         onchange={(e) => {
           sizeVarId = (e.target as HTMLSelectElement).value;
@@ -268,32 +301,18 @@
           >
         {/each}
       </select>
-      <div class="var-meta">{sizeSpec.yearNote ?? ""}</div>
-    </label>
+    </div>
 
-    {#if !loading && !error && years.length > 0}
-      <div class="year-ctrl">
-        <div class="year-row">
-          {#if years.length > 1}
-            <span class="year-bound">{years[0]}</span>
-            <input
-              type="range"
-              min={0}
-              max={years.length - 1}
-              step="1"
-              value={years.indexOf(selectedYear)}
-              oninput={(e) => {
-                const idx = parseInt((e.target as HTMLInputElement).value, 10);
-                selectedYear = years[idx] ?? selectedYear;
-              }}
-            />
-            <span class="year-bound">{years[years.length - 1]}</span>
-          {/if}
-        </div>
-        <div class="year-coverage">{coverageCount} of {totalCodes} {entityLabel} have data</div>
-      </div>
-    {/if}
-  </div>
+    <button
+      class="theme-toggle"
+      class:dark={theme === "dark"}
+      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      aria-label="Toggle theme"
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      <span class="toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
+    </button>
+  </nav>
 
   <div class="chart-area">
     {#if loading}
@@ -346,15 +365,6 @@
         </p>
       {/if}
     {/if}
-    <button
-      class="theme-toggle"
-      class:dark={theme === "dark"}
-      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
-      aria-label="Toggle theme"
-    >
-      <span class="toggle-track"><span class="toggle-thumb"></span></span>
-      <span class="toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
-    </button>
   </div>
 </div>
 
@@ -367,30 +377,18 @@
     color: var(--text);
   }
 
-  .breadcrumb {
-    display: flex;
-    align-items: center;
-    padding: 14px 20px 0;
-    font-size: 14px;
-    flex-shrink: 0;
-  }
-
   .crumbs {
     display: flex;
     align-items: center;
-    gap: 4px;
-  }
-
-  .nav-right {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-right: 4px;
   }
 
   .sep {
     color: var(--text-sep);
     margin: 0 2px;
+    font-size: 11px;
   }
 
   .crumb {
@@ -398,12 +396,11 @@
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 14px;
-    padding: 2px 6px;
+    font-size: 12px;
+    padding: 2px 4px;
     border-radius: 4px;
-    transition:
-      color 0.15s,
-      background 0.15s;
+    transition: color 0.15s, background 0.15s;
+    font-family: system-ui, sans-serif;
   }
 
   .crumb:hover {
@@ -416,94 +413,49 @@
     cursor: default;
   }
 
-  .controls {
+  .topbar {
     display: flex;
+    align-items: center;
     gap: 16px;
-    padding: 10px 20px 8px;
+    padding: 8px 18px;
     flex-shrink: 0;
     flex-wrap: wrap;
-    border-bottom: 1px solid var(--domain, rgba(0, 0, 0, 0.06));
-  }
-
-  .ctrl-label {
-    display: grid;
-    grid-template-columns: auto auto;
-    grid-template-rows: auto auto;
-    column-gap: 6px;
-    row-gap: 2px;
-    align-items: center;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     font-size: 12px;
-    color: var(--text-muted);
   }
+  .topbar.dark { border-bottom-color: rgba(255, 255, 255, 0.08); }
 
-  .ctrl-name {
-    grid-column: 1;
-    grid-row: 1;
-    white-space: nowrap;
-  }
+  .ctrl-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .ctrl-label { color: var(--text-muted); white-space: nowrap; }
 
-  .var-meta {
-    grid-column: 2;
-    grid-row: 2;
-    font-size: 11px;
-    color: var(--text-sep);
-    white-space: nowrap;
-    min-height: 14px;
-  }
-
-  .ctrl-label select {
-    grid-column: 2;
-    grid-row: 1;
+  .ctrl-group select {
     font-size: 12px;
     padding: 3px 6px;
     border-radius: 4px;
-    border: 1px solid var(--domain, rgba(0, 0, 0, 0.15));
-    background: var(--bg, #fff);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    background: var(--bg);
     color: var(--text);
     cursor: pointer;
-    max-width: 260px;
+    max-width: 190px;
   }
-
-  .controls.dark .ctrl-label select {
+  .topbar.dark .ctrl-group select {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 255, 255, 0.15);
     color: #ddd;
   }
-
-  .ctrl-label select option:disabled {
+  .ctrl-group select option:disabled {
     color: #aaa;
   }
 
   .year-ctrl {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-left: auto;
-    flex-shrink: 0;
-    min-width: 264px;
-  }
-
-  .year-row {
-    display: flex;
     align-items: center;
-    gap: 8px;
-  }
-
-  .year-coverage {
-    font-size: 11px;
-    color: var(--text-sep);
-    white-space: nowrap;
-  }
-
-  .year-bound {
-    font-size: 12px;
-    color: var(--text-muted);
-    white-space: nowrap;
+    gap: 6px;
     flex-shrink: 0;
   }
 
-  .year-ctrl input[type="range"] {
-    width: 140px;
+  .year-slider {
+    width: 160px;
     height: 6px;
     accent-color: #f46d43;
     cursor: pointer;
@@ -512,46 +464,83 @@
     background: transparent;
   }
 
-  .year-ctrl input[type="range"]::-webkit-slider-runnable-track {
+  .year-slider::-webkit-slider-runnable-track {
     height: 6px;
     border-radius: 3px;
     background: var(--spinner-track, rgba(0, 0, 0, 0.12));
   }
 
-  .year-ctrl input[type="range"]::-webkit-slider-thumb {
+  .year-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: #f46d43;
-    margin-top: -7px;
+    margin-top: -6px;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-    transition: transform 0.1s;
   }
 
-  .year-ctrl input[type="range"]:hover::-webkit-slider-thumb {
-    transform: scale(1.15);
-  }
-
-  .year-ctrl input[type="range"]::-moz-range-track {
+  .year-slider::-moz-range-track {
     height: 6px;
     border-radius: 3px;
     background: var(--spinner-track, rgba(0, 0, 0, 0.12));
   }
 
-  .year-ctrl input[type="range"]::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
+  .year-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
     background: #f46d43;
     border: none;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   }
 
+  .year-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 34px;
+    text-align: center;
+  }
+
+  .step-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 11px;
+    border-radius: 3px;
+  }
+  .step-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .step-btn:not(:disabled):hover {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
+  .play-btn {
+    background: none;
+    border: 1px solid var(--text-sep);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 3px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+    font-family: system-ui, sans-serif;
+  }
+  .play-btn:hover,
+  .play-btn.active {
+    color: var(--text);
+    background: var(--hover-bg);
+  }
+
   .theme-toggle {
-    position: absolute;
-    bottom: 14px;
-    right: 18px;
+    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -562,7 +551,7 @@
     font-size: 12px;
     padding: 4px 2px;
     transition: color 0.15s;
-    z-index: 5;
+    flex-shrink: 0;
   }
 
   .theme-toggle:hover {

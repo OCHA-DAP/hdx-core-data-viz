@@ -10,7 +10,7 @@
     "humanitarian-needs": "Hum. Needs",
     "refugees-persons-of-concern": "Refugees",
     returnees: "Returnees",
-    rainfall: "Rainfall",
+    "hazards-rainfall": "Rainfall",
     "conflict-events": "Conflict",
     funding: "Funding",
     "national-risk": "Nat. Risk",
@@ -69,18 +69,26 @@
       });
   });
 
-  // Unique datasets in stable order
+  // Unique datasets in stable order, annotated with group index and group-start flag
   const datasets = $derived.by(() => {
     const seen = new Map<string, { category: string; subcategory: string }>();
     for (const r of rows) {
       const key = `${r.category}/${r.subcategory}`;
       if (!seen.has(key)) seen.set(key, { category: r.category, subcategory: r.subcategory });
     }
-    return [...seen.values()].sort((a, b) =>
+    const sorted = [...seen.values()].sort((a, b) =>
       a.category !== b.category
         ? a.category.localeCompare(b.category)
         : a.subcategory.localeCompare(b.subcategory),
     );
+    let groupIndex = 0;
+    let lastCategory = "";
+    return sorted.map((d, i) => {
+      const isGroupStart = d.category !== lastCategory;
+      if (isGroupStart && i > 0) groupIndex++;
+      lastCategory = d.category;
+      return { ...d, groupIndex, isGroupStart };
+    });
   });
 
   // Unique countries filtered by search
@@ -121,11 +129,11 @@
   });
 
   const categoryGroups = $derived.by(() => {
-    const groups: { category: string; count: number }[] = [];
+    const groups: { category: string; count: number; groupIndex: number }[] = [];
     let last = "";
     for (const d of datasets) {
       if (d.category !== last) {
-        groups.push({ category: d.category, count: 1 });
+        groups.push({ category: d.category, count: 1, groupIndex: groups.length });
         last = d.category;
       } else {
         groups[groups.length - 1].count++;
@@ -140,35 +148,31 @@
 </script>
 
 <div class="avail-page" class:dark={theme === "dark"}>
-  <header class="page-header">
-    <div class="header-left">
-      <h1 class="page-title">Data Availability</h1>
-    </div>
-    <div class="header-right">
-      {#if !loading && !error}
-        <span class="summary-stat">
-          {totalCountries} countries · {totalDatasets} datasets · {totalEntries.toLocaleString()} entries
-          {#if loadingSubNational}<span class="sub-loading">· checking sub-national…</span>{/if}
-        </span>
-      {/if}
-      <input
-        class="search-box"
-        type="search"
-        placeholder="Search countries…"
-        bind:value={search}
-        aria-label="Search countries"
-      />
-      <button
-        class="theme-toggle"
-        class:dark={theme === "dark"}
-        onclick={() => (theme = theme === "dark" ? "light" : "dark")}
-        aria-label="Toggle theme"
-      >
-        <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        <span class="toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
-      </button>
-    </div>
-  </header>
+  <nav class="topbar" class:dark={theme === "dark"}>
+    <span class="page-title">Data Availability</span>
+    {#if !loading && !error}
+      <span class="summary-stat">
+        {totalCountries} countries · {totalDatasets} datasets · {totalEntries.toLocaleString()} entries
+        {#if loadingSubNational}<span class="sub-loading">· checking sub-national…</span>{/if}
+      </span>
+    {/if}
+    <input
+      class="search-box"
+      type="search"
+      placeholder="Search countries…"
+      bind:value={search}
+      aria-label="Search countries"
+    />
+    <button
+      class="theme-toggle"
+      class:dark={theme === "dark"}
+      onclick={() => (theme = theme === "dark" ? "light" : "dark")}
+      aria-label="Toggle theme"
+    >
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      <span class="toggle-label">{theme === "dark" ? "Dark" : "Light"}</span>
+    </button>
+  </nav>
 
   {#if loading}
     <div class="status-overlay">
@@ -187,14 +191,21 @@
           <tr class="group-row">
             <th class="country-col sticky-col" rowspan="2">Country</th>
             {#each categoryGroups as g (g.category)}
-              <th class="group-header" colspan={g.count}
-                >{CATEGORY_LABELS[g.category] ?? g.category}</th
-              >
+              <th
+                class="group-header"
+                class:group-shade={g.groupIndex % 2 === 1}
+                colspan={g.count}
+              >{CATEGORY_LABELS[g.category] ?? g.category}</th>
             {/each}
           </tr>
           <tr class="dataset-row">
             {#each datasets as d (`${d.category}/${d.subcategory}`)}
-              <th class="dataset-col" title={`${d.category} / ${d.subcategory}`}>
+              <th
+                class="dataset-col"
+                class:group-start={d.isGroupStart}
+                class:group-shade={d.groupIndex % 2 === 1}
+                title={`${d.category} / ${d.subcategory}`}
+              >
                 {DATASET_LABELS[d.subcategory] ?? d.subcategory}
               </th>
             {/each}
@@ -215,7 +226,7 @@
               </td>
               {#each datasets as d (`${d.category}/${d.subcategory}`)}
                 {@const cell = countryData?.get(`${d.category}/${d.subcategory}`)}
-                <td class="cell">
+                <td class="cell" class:group-start={d.isGroupStart}>
                   {#if cell}
                     <span class="dots">
                       <span
@@ -259,7 +270,7 @@
                 </td>
                 {#each datasets as d (`${d.category}/${d.subcategory}`)}
                   {@const cell = countryData?.get(`${d.category}/${d.subcategory}`)}
-                  <td class="detail-cell">
+                  <td class="detail-cell" class:group-start={d.isGroupStart}>
                     {#if cell}
                       <div class="detail-dates">
                         {#each [0, 1, 2] as lvl}
@@ -307,33 +318,24 @@
     font-family: system-ui, sans-serif;
   }
 
-  .page-header {
+  .topbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--text-sep);
+    gap: 16px;
+    padding: 8px 18px;
     flex-shrink: 0;
-    gap: 16px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    font-size: 12px;
   }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+  .topbar.dark { border-bottom-color: rgba(255, 255, 255, 0.08); }
 
   .page-title {
-    margin: 0;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 600;
+    color: var(--text);
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .summary-stat {
@@ -348,13 +350,19 @@
   }
 
   .search-box {
-    padding: 5px 10px;
-    border: 1px solid var(--text-sep);
+    padding: 3px 6px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 4px;
     background: var(--bg);
     color: var(--text);
-    font-size: 13px;
-    width: 180px;
+    font-size: 12px;
+    width: 160px;
+    margin-left: auto;
+  }
+  .topbar.dark .search-box {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ddd;
   }
   .search-box:focus {
     outline: none;
@@ -437,11 +445,25 @@
   }
 
   .group-header {
-    border-left: 1px solid var(--text-sep);
+    border-left: 2px solid var(--text-sep);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     background: var(--bg);
+  }
+
+  .group-shade {
+    background: rgba(0, 0, 0, 0.035);
+  }
+  .dark .group-shade {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .group-start {
+    border-left: 2px solid rgba(0, 0, 0, 0.18) !important;
+  }
+  .dark .group-start {
+    border-left-color: rgba(255, 255, 255, 0.22) !important;
   }
 
   .dataset-col {
@@ -610,48 +632,41 @@
     font-style: italic;
   }
 
-  /* Theme toggle */
   .theme-toggle {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 4px;
+    padding: 4px 2px;
     color: var(--text-muted);
     font-size: 12px;
-    transition: background 0.15s;
+    transition: color 0.15s;
+    flex-shrink: 0;
   }
-  .theme-toggle:hover {
-    background: var(--hover-bg);
-  }
+  .theme-toggle:hover { color: var(--text); }
   .toggle-track {
-    width: 28px;
-    height: 16px;
-    background: var(--text-sep);
-    border-radius: 8px;
     position: relative;
-    transition: background 0.2s;
+    width: 36px;
+    height: 20px;
+    background: #ccc;
+    border-radius: 10px;
+    transition: background 0.25s;
+    flex-shrink: 0;
   }
-  .theme-toggle.dark .toggle-track {
-    background: #f46d43;
-  }
+  .dark .toggle-track { background: #f46d43; }
   .toggle-thumb {
     position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: white;
-    transition: transform 0.2s;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.25s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   }
-  .theme-toggle.dark .toggle-thumb {
-    transform: translateX(12px);
-  }
-  .toggle-label {
-    font-size: 11px;
-  }
+  .dark .toggle-thumb { transform: translateX(16px); }
+  .toggle-label { min-width: 28px; }
 </style>
