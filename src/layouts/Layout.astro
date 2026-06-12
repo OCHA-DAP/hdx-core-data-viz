@@ -4,6 +4,13 @@ interface Props {
 }
 
 const { title = "HDX" } = Astro.props;
+const pathname = Astro.url.pathname;
+
+const navLinks = [
+  { href: "/", label: "Explorer" },
+  { href: "/refugees", label: "Refugee Flows" },
+  { href: "/availability", label: "Availability" },
+];
 ---
 
 <!doctype html>
@@ -44,12 +51,77 @@ const { title = "HDX" } = Astro.props;
         height: 100dvh;
         overflow: hidden;
         background: var(--bg);
+        color: var(--text);
         font-family: system-ui, sans-serif;
         transition: background 0.2s;
+        display: flex;
+        flex-direction: column;
+      }
+      nav {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 0 16px;
+        height: 40px;
+        border-bottom: 1px solid var(--text-sep);
+        background: var(--bg);
+      }
+      .nav-wordmark {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: var(--text);
+        margin-right: 24px;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .nav-links {
+        display: flex;
+        align-items: stretch;
+        height: 100%;
+        gap: 0;
+      }
+      .nav-links a {
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        font-size: 13px;
+        text-decoration: none;
+        color: var(--text-muted);
+        border-bottom: 2px solid transparent;
+        transition: color 0.15s, background 0.15s;
+        white-space: nowrap;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+        background: var(--hover-bg);
+      }
+      .nav-links a.active {
+        color: var(--text);
+        font-weight: 600;
+        border-bottom-color: var(--text);
+      }
+      main {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
       }
     </style>
   </head>
   <body>
-    <slot />
+    <nav>
+      <span class="nav-wordmark">HDX Lens</span>
+      <div class="nav-links">
+        {navLinks.map(({ href, label }) => (
+          <a href={href} class={pathname === href ? "active" : ""}>
+            {label}
+          </a>
+        ))}
+      </div>
+    </nav>
+    <main>
+      <slot />
+    </main>
   </body>
 </html>
