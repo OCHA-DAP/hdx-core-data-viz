@@ -863,3 +863,73 @@ export async function fetchSubNationalAvailability(
   `;
   return parseAvailRows(await conn.query(sql), level);
 }
+
+// ── Refugee flow query ────────────────────────────────────────────────────────
+
+export interface FlowRow {
+  origin: string;
+  asylum: string;
+  total: number;
+}
+
+const flowCache = new Map<string, FlowRow[]>();
+
+export async function fetchRefugeeFlows(
+  year: number,
+  topN: number,
+  groups: string[],
+): Promise<FlowRow[]> {
+  const cacheKey = `${year}|${topN}|${groups.join(",")}`;
+  if (flowCache.has(cacheKey)) return flowCache.get(cacheKey)!;
+
+  const conn = await getConn();
+  const url = `${BASE}/affected-people/refugees-persons-of-concern.parquet`;
+  const groupList = groups.map((g) => `'${g}'`).join(",");
+
+  const sql = `
+WITH top_countries AS (
+  SELECT location_name, SUM(total) AS grand_total
+  FROM (
+    SELECT origin_location_name AS location_name, SUM(population) AS total
+    FROM read_parquet('${url}', hive_partitioning=false)
+    WHERE gender = 'all' AND age_range = 'all'
+      AND population_group IN (${groupList})
+      AND year(CAST(reference_period_end AS DATE)) = ${year}
+    GROUP BY origin_location_name
+    UNION ALL
+    SELECT asylum_location_name AS location_name, SUM(population) AS total
+    FROM read_parquet('${url}', hive_partitioning=false)
+    WHERE gender = 'all' AND age_range = 'all'
+      AND population_group IN (${groupList})
+      AND year(CAST(reference_period_end AS DATE)) = ${year}
+    GROUP BY asylum_location_name
+  )
+  GROUP BY location_name
+  ORDER BY grand_total DESC
+  LIMIT ${topN}
+)
+SELECT
+  origin_location_name AS origin,
+  asylum_location_name AS asylum,
+  SUM(population) AS total
+FROM read_parquet('${url}', hive_partitioning=false)
+WHERE gender = 'all' AND age_range = 'all'
+  AND population_group IN (${groupList})
+  AND year(CAST(reference_period_end AS DATE)) = ${year}
+  AND origin_location_name IN (SELECT location_name FROM top_countries)
+  AND asylum_location_name IN (SELECT location_name FROM top_countries)
+GROUP BY origin_location_name, asylum_location_name
+HAVING SUM(population) > 0
+ORDER BY total DESC
+  `;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: FlowRow[] = (await conn.query(sql)).toArray().map((r: any) => ({
+    origin: String(r.origin),
+    asylum: String(r.asylum),
+    total: Number(r.total),
+  }));
+
+  flowCache.set(cacheKey, rows);
+  return rows;
+}
