@@ -18,8 +18,8 @@
   let admin1Name: string | undefined = $state();
   let theme: "dark" | "light" = $state("light");
 
-  let xVarId: string = $state("hum_needs_per_100k");
-  let yVarId: string = $state("ipc_phase3_fraction");
+  let xVarId: string = $state("ipc_phase3_fraction");
+  let yVarId: string = $state("funding_gap_pct");
   let sizeVarId: string = $state("idp_population");
 
   const xSpec = $derived(AXIS_VARS.find((v) => v.id === xVarId)!);
@@ -91,7 +91,7 @@
       countryName = undefined;
       if (AXIS_VARS.find((v) => v.id === xVarId)?.subNationalOnly)
         xVarId = "hum_needs_per_100k";
-      if (AXIS_VARS.find((v) => v.id === yVarId)?.subNationalOnly) yVarId = "ipc_phase3_fraction";
+      if (AXIS_VARS.find((v) => v.id === yVarId)?.subNationalOnly) yVarId = "hum_needs_per_100k";
     }
     level = target;
   }
@@ -101,7 +101,7 @@
       // Reset level-0-only variables before drilling in
       if (AXIS_VARS.find((v) => v.id === xVarId)?.levelOnly === 0)
         xVarId = "hum_needs_per_100k";
-      if (AXIS_VARS.find((v) => v.id === yVarId)?.levelOnly === 0) yVarId = "ipc_phase3_fraction";
+      if (AXIS_VARS.find((v) => v.id === yVarId)?.levelOnly === 0) yVarId = "hum_needs_per_100k";
       countryCode = code;
       countryName = name;
       level = 1;
