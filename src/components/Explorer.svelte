@@ -221,8 +221,23 @@
     }
   }
 
+  function applyUrlParams() {
+    const p = readParams();
+    const lvl = parseInt(p.get("level") ?? "", 10);
+    level = ([0, 1, 2].includes(lvl) ? lvl : 0) as AdminLevel;
+    countryCode = p.get("country") ?? undefined;
+    countryName = undefined;
+    admin1Code = p.get("admin1") ?? undefined;
+    admin1Name = undefined;
+    xVarId = _xIds.has(p.get("x") ?? "") ? p.get("x")! : _xDefault;
+    yVarId = _xIds.has(p.get("y") ?? "") ? p.get("y")! : _yDefault;
+    sizeVarId = _szIds.has(p.get("size") ?? "") ? p.get("size")! : _szDefault;
+    const urlYear = parseInt(p.get("year") ?? "", 10);
+    selectedYear = Number.isFinite(urlYear) && urlYear > 1990 ? urlYear : 0;
+  }
+
   let _popstate: () => void;
-  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
+  onMount(() => { _popstate = applyUrlParams; window.addEventListener("popstate", _popstate); });
   onDestroy(() => { window.removeEventListener("popstate", _popstate); clearInterval(playTimer); });
 
   function onKeydown(e: KeyboardEvent) {
