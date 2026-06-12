@@ -1,11 +1,25 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import * as echarts from "echarts";
   import { fetchRefugeeFlows, type FlowRow } from "../lib/hapi.js";
+  import { readParams, updateParams } from "../lib/urlState.js";
 
-  let year = $state(2024);
-  let topN = $state(15);
-  let showASY = $state(true);
+  const _p = readParams();
+  const _urlYear = parseInt(_p.get("year") ?? "", 10);
+  let year = $state(Number.isFinite(_urlYear) && _urlYear >= 2001 && _urlYear <= 2024 ? _urlYear : 2024);
+
+  const _urlTopN = parseInt(_p.get("topN") ?? "", 10);
+  let topN = $state([10, 15, 20].includes(_urlTopN) ? _urlTopN : 15);
+
+  let showASY = $state(_p.get("asy") !== "false");
+
+  $effect(() => {
+    updateParams({
+      year: year === 2024 ? null : String(year),
+      topN: topN === 15 ? null : String(topN),
+      asy: showASY ? null : "false",
+    });
+  });
   let loading = $state(true);
   let hasData = $state(false); // stays true once first data arrives
   let error = $state<string | null>(null);
@@ -192,7 +206,10 @@
     }
   }
 
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
   onDestroy(() => {
+    window.removeEventListener("popstate", _popstate);
     clearInterval(playTimer);
     chart?.dispose();
     chart = undefined;

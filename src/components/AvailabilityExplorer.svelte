@@ -30,13 +30,26 @@
     metadata: "Metadata",
   };
 
+  import { onMount, onDestroy } from "svelte";
+  import { readParams, updateParams } from "../lib/urlState.js";
+
+  const _p = readParams();
+
   let rows: AvailabilityRow[] = $state([]);
   let loading = $state(true);
   let loadingSubNational = $state(false);
   let error: string | null = $state(null);
-  let search = $state("");
-  let expandedCode: string | null = $state(null);
+  let search = $state(_p.get("q") ?? "");
+  let expandedCode: string | null = $state(_p.get("expanded") ?? null);
   let theme: "dark" | "light" = $state("light");
+
+  $effect(() => {
+    updateParams({ q: search || null, expanded: expandedCode ?? null });
+  });
+
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
+  onDestroy(() => { window.removeEventListener("popstate", _popstate); });
 
   $effect(() => {
     document.documentElement.dataset.theme = theme;

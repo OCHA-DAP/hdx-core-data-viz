@@ -1,13 +1,34 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
+  import { readParams, updateParams } from "../lib/urlState.js";
   import { fetchIpcPhases, type IpcPhaseRow } from "../lib/hapi.js";
 
   // slider goes 2017–2027; 2027 = "Latest per country" (year=null)
   const YEAR_MIN = 2017;
   const YEAR_LATEST = 2027; // sentinel value for the slider's rightmost tick
-  let sliderVal = $state(YEAR_LATEST);
+
+  const _p = readParams();
+  const _urlYear = _p.get("year") === "latest" ? YEAR_LATEST : parseInt(_p.get("year") ?? "", 10);
+  let sliderVal = $state(
+    Number.isFinite(_urlYear) && _urlYear >= YEAR_MIN && _urlYear <= YEAR_LATEST ? _urlYear : YEAR_LATEST
+  );
   const year = $derived(sliderVal === YEAR_LATEST ? null : sliderVal);
   type SortKey = "p5" | "p4plus" | "p3plus";
-  let sortBy = $state<SortKey>("p5");
+  const _sortValid = new Set<SortKey>(["p5", "p4plus", "p3plus"]);
+  let sortBy = $state<SortKey>(
+    _sortValid.has(_p.get("sort") as SortKey) ? (_p.get("sort") as SortKey) : "p5"
+  );
+
+  $effect(() => {
+    updateParams({
+      year: sliderVal === YEAR_LATEST ? "latest" : String(sliderVal),
+      sort: sortBy === "p5" ? null : sortBy,
+    });
+  });
+
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
+  onDestroy(() => { window.removeEventListener("popstate", _popstate); });
   let rows = $state<IpcPhaseRow[]>([]);
   let hasData = $state(false);
   let loading = $state(true);

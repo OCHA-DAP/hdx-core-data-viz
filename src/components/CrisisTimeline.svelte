@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import * as echarts from "echarts";
   import CrisisTileGrid from "./CrisisTileGrid.svelte";
   import {
@@ -8,9 +8,13 @@
     type CountryRow,
     type TimelinePoint,
   } from "../lib/hapi.js";
+  import { readParams, updateParams, pushParams } from "../lib/urlState.js";
+
+  const _p = readParams();
+  const _initCountry = _p.get("country") ?? "";
 
   let countries = $state<CountryRow[]>([]);
-  let locationCode = $state("");
+  let locationCode = $state(_initCountry);
   let rows = $state<TimelinePoint[]>([]);
   let hasData = $state(false);
   let loading = $state(false);
@@ -20,7 +24,17 @@
   let chart: echarts.ECharts | undefined;
 
   // showGrid: true = global tile view; false = country detail view
-  let showGrid = $state(true);
+  let showGrid = $state(!_initCountry);
+
+  $effect(() => {
+    updateParams({
+      country: locationCode || null,
+      detail: !showGrid && locationCode ? "true" : null,
+    });
+  });
+
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
 
   $effect(() => { document.documentElement.dataset.theme = theme; });
 
@@ -48,11 +62,13 @@
   function selectCountry(code: string) {
     locationCode = code;
     showGrid = false;
+    pushParams({ country: code, detail: "true" });
   }
 
   function backToGrid() {
     locationCode = "";
     showGrid = true;
+    pushParams({ country: null, detail: null });
   }
 
   const PANELS = [
@@ -188,7 +204,7 @@
     chart.setOption(option, { notMerge: true });
   });
 
-  onDestroy(() => { chart?.dispose(); chart = undefined; });
+  onDestroy(() => { window.removeEventListener("popstate", _popstate); chart?.dispose(); chart = undefined; });
 </script>
 
 <div class="wrapper">
@@ -200,7 +216,7 @@
     <div class="ctrl-group">
       <label class="ctrl-label" for="country-sel">Country</label>
       <select id="country-sel" bind:value={locationCode}
-        onchange={() => { if (locationCode) showGrid = false; else showGrid = true; }}
+        onchange={() => { if (locationCode) selectCountry(locationCode); else backToGrid(); }}
         disabled={countries.length === 0}>
         <option value="">Select crisis country…</option>
         {#each countries as c}

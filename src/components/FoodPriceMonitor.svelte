@@ -1,14 +1,33 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import FoodPriceTileGrid from "./FoodPriceTileGrid.svelte";
   import FoodPriceCategoryCharts from "./FoodPriceCategoryCharts.svelte";
   import { fetchFoodPriceGlobal } from "../lib/hapi.js";
+  import { readParams, updateParams, pushParams } from "../lib/urlState.js";
+
+  const _p = readParams();
+  const _initCountry = _p.get("country") ?? "";
 
   let countries = $state<{ code: string; name: string }[]>([]);
-  let locationCode = $state("");
-  let normalized = $state(true);
+  let locationCode = $state(_initCountry);
+  let normalized = $state(_p.get("norm") !== "false");
   let theme = $state<"dark" | "light">("light");
-  let showGrid = $state(true);
-  let panelHeight = $state(220);
+  let showGrid = $state(!_initCountry);
+  const _urlZoom = parseInt(_p.get("zoom") ?? "", 10);
+  let panelHeight = $state(Number.isFinite(_urlZoom) && _urlZoom >= 150 && _urlZoom <= 520 ? _urlZoom : 220);
+
+  $effect(() => {
+    updateParams({
+      country: locationCode || null,
+      detail: !showGrid && locationCode ? "true" : null,
+      norm: !showGrid ? (normalized ? null : "false") : null,
+      zoom: !showGrid && panelHeight !== 220 ? String(panelHeight) : null,
+    });
+  });
+
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
+  onDestroy(() => { window.removeEventListener("popstate", _popstate); });
 
   $effect(() => { document.documentElement.dataset.theme = theme; });
 
@@ -22,11 +41,13 @@
   function selectCountry(code: string) {
     locationCode = code;
     showGrid = false;
+    pushParams({ country: code, detail: "true" });
   }
 
   function backToGrid() {
     locationCode = "";
     showGrid = true;
+    pushParams({ country: null, detail: null, norm: null, zoom: null });
   }
 </script>
 
@@ -39,7 +60,7 @@
     <div class="ctrl-group">
       <label class="ctrl-label" for="country-sel">Country</label>
       <select id="country-sel" bind:value={locationCode}
-        onchange={() => { if (locationCode) { showGrid = false; } else backToGrid(); }}
+        onchange={() => { if (locationCode) selectCountry(locationCode); else backToGrid(); }}
         disabled={countries.length === 0}>
         <option value="">Select country…</option>
         {#each countries as c}

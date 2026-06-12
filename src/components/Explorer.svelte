@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import {
     buildBubbleData,
     fetchNonDrillableCodes,
+    fetchCountryList,
     AXIS_VARS,
     SIZE_VARS,
     type AdminLevel,
@@ -10,24 +11,36 @@
     type DataAvailability,
   } from "../lib/hapi.js";
   import BubbleChart from "./BubbleChart.svelte";
+  import { readParams, updateParams, pushParams } from "../lib/urlState.js";
 
-  let level: AdminLevel = $state(0);
-  let countryCode: string | undefined = $state();
+  const _p = readParams();
+  const _xDefault = "ipc_phase3_fraction";
+  const _yDefault = "funding_gap_pct";
+  const _szDefault = "idp_population";
+  const _xIds = new Set(AXIS_VARS.map((v) => v.id));
+  const _szIds = new Set(SIZE_VARS.map((v) => v.id));
+
+  const _lvl = parseInt(_p.get("level") ?? "", 10);
+  let level: AdminLevel = $state(([0, 1, 2].includes(_lvl) ? _lvl : 0) as AdminLevel);
+  let countryCode: string | undefined = $state(_p.get("country") ?? undefined);
   let countryName: string | undefined = $state();
-  let admin1Code: string | undefined = $state();
+  let admin1Code: string | undefined = $state(_p.get("admin1") ?? undefined);
   let admin1Name: string | undefined = $state();
   let theme: "dark" | "light" = $state("light");
 
-  let xVarId: string = $state("ipc_phase3_fraction");
-  let yVarId: string = $state("funding_gap_pct");
-  let sizeVarId: string = $state("idp_population");
+  let xVarId: string = $state(_xIds.has(_p.get("x") ?? "") ? _p.get("x")! : _xDefault);
+  let yVarId: string = $state(_xIds.has(_p.get("y") ?? "") ? _p.get("y")! : _yDefault);
+  let sizeVarId: string = $state(_szIds.has(_p.get("size") ?? "") ? _p.get("size")! : _szDefault);
+
+  const _urlYear = parseInt(_p.get("year") ?? "", 10);
+  let _yearFromUrl = Number.isFinite(_urlYear) && _urlYear > 1990 ? _urlYear : 0;
 
   const xSpec = $derived(AXIS_VARS.find((v) => v.id === xVarId)!);
   const ySpec = $derived(AXIS_VARS.find((v) => v.id === yVarId)!);
   const sizeSpec = $derived(SIZE_VARS.find((v) => v.id === sizeVarId)!);
 
   let data: BubbleRow[] = $state([]);
-  let selectedYear: number = $state(0);
+  let selectedYear: number = $state(_yearFromUrl);
   let loading = $state(true);
   let error: string | null = $state(null);
   let noDataCodes: Set<string> = $state(new Set());
@@ -80,35 +93,48 @@
     document.documentElement.dataset.theme = theme;
   });
 
+  $effect(() => {
+    updateParams({
+      level: level === 0 ? null : String(level),
+      country: countryCode ?? null,
+      admin1: admin1Code ?? null,
+      x: xVarId === _xDefault ? null : xVarId,
+      y: yVarId === _yDefault ? null : yVarId,
+      size: sizeVarId === _szDefault ? null : sizeVarId,
+      year: selectedYear > 0 ? String(selectedYear) : null,
+    });
+  });
+
   function drillTo(target: AdminLevel) {
     if (target >= level) return;
-    if (target < 2) {
-      admin1Code = undefined;
-      admin1Name = undefined;
-    }
+    if (target < 2) { admin1Code = undefined; admin1Name = undefined; }
     if (target < 1) {
       countryCode = undefined;
       countryName = undefined;
-      if (AXIS_VARS.find((v) => v.id === xVarId)?.subNationalOnly)
-        xVarId = "hum_needs_per_100k";
+      if (AXIS_VARS.find((v) => v.id === xVarId)?.subNationalOnly) xVarId = "hum_needs_per_100k";
       if (AXIS_VARS.find((v) => v.id === yVarId)?.subNationalOnly) yVarId = "hum_needs_per_100k";
     }
     level = target;
+    pushParams({
+      level: target === 0 ? null : String(target),
+      country: target >= 1 ? countryCode ?? null : null,
+      admin1: target >= 2 ? admin1Code ?? null : null,
+    });
   }
 
   function onSelect(code: string, name: string) {
     if (level === 0) {
-      // Reset level-0-only variables before drilling in
-      if (AXIS_VARS.find((v) => v.id === xVarId)?.levelOnly === 0)
-        xVarId = "hum_needs_per_100k";
+      if (AXIS_VARS.find((v) => v.id === xVarId)?.levelOnly === 0) xVarId = "hum_needs_per_100k";
       if (AXIS_VARS.find((v) => v.id === yVarId)?.levelOnly === 0) yVarId = "hum_needs_per_100k";
       countryCode = code;
       countryName = name;
       level = 1;
+      pushParams({ level: "1", country: code, admin1: null });
     } else if (level === 1) {
       admin1Code = code;
       admin1Name = name;
       level = 2;
+      pushParams({ level: "2", admin1: code });
     }
   }
 
@@ -154,6 +180,12 @@
             : rowYears.includes(2023)
               ? 2023
               : bestYear;
+          if (countryCode && !countryName) {
+            fetchCountryList().then((list) => {
+              const c = list.find((r) => r.code === countryCode);
+              if (c) countryName = c.name;
+            });
+          }
           loading = false;
         }
       })
@@ -189,9 +221,9 @@
     }
   }
 
-  onDestroy(() => {
-    clearInterval(playTimer);
-  });
+  let _popstate: () => void;
+  onMount(() => { _popstate = () => location.reload(); window.addEventListener("popstate", _popstate); });
+  onDestroy(() => { window.removeEventListener("popstate", _popstate); clearInterval(playTimer); });
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && level > 0) drillTo((level - 1) as AdminLevel);
