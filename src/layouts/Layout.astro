@@ -14,6 +14,7 @@ const navLinks = [
   { href: `${base}food-prices`, label: "Food Prices" },
   { href: `${base}food-security`, label: "Food Security" },
   { href: `${base}availability`, label: "Availability" },
+  { href: `${base}about`, label: "About" },
 ];
 ---
 
@@ -115,7 +116,7 @@ const navLinks = [
   </head>
   <body>
     <nav>
-      <span class="nav-wordmark">HDX Lens</span>
+      <span class="nav-wordmark">HDX Core Data</span>
       <div class="nav-links">
         {navLinks.map(({ href, label }) => (
           <a href={href} class={pathname === href ? "active" : ""}>

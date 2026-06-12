@@ -1090,25 +1090,37 @@ export async function fetchIpcPhases(year: number | null): Promise<IpcPhaseRow[]
     year != null
       ? `AND CAST(LEFT(reference_period_start, 4) AS INTEGER) = ${year}`
       : "";
+  // Use MAX(reference_period_start) per country to pick only the latest assessment
+  // period within the target year. Without this, countries with multiple IPC rounds
+  // in the same year get their fractions summed, exceeding 100%.
   const sql =
     year != null
-      ? `SELECT location_name, location_code, ipc_phase,
-               SUM(population_fraction_in_phase) AS fraction, ${year} AS year
-         FROM read_parquet('${foodUrl}', hive_partitioning=false)
-         WHERE ipc_type = 'current' AND ipc_phase IN ('1','2','3','4','5') ${yearCond}
-         GROUP BY location_name, location_code, ipc_phase ORDER BY location_name, ipc_phase`
+      ? `WITH latest AS (
+           SELECT location_code, MAX(reference_period_start) AS max_period
+           FROM read_parquet('${foodUrl}', hive_partitioning=false)
+           WHERE ipc_type = 'current' ${yearCond}
+           GROUP BY location_code
+         )
+         SELECT f.location_name, f.location_code, f.ipc_phase,
+                SUM(f.population_fraction_in_phase) AS fraction, ${year} AS year
+         FROM read_parquet('${foodUrl}', hive_partitioning=false) f
+         JOIN latest l ON f.location_code = l.location_code
+           AND f.reference_period_start = l.max_period
+         WHERE f.ipc_type = 'current' AND f.ipc_phase IN ('1','2','3','4','5')
+         GROUP BY f.location_name, f.location_code, f.ipc_phase ORDER BY f.location_name, f.ipc_phase`
       : `WITH latest AS (
-           SELECT location_code, MAX(CAST(LEFT(reference_period_start, 4) AS INTEGER)) AS max_year
+           SELECT location_code, MAX(reference_period_start) AS max_period
            FROM read_parquet('${foodUrl}', hive_partitioning=false)
            WHERE ipc_type = 'current' GROUP BY location_code
          )
          SELECT f.location_name, f.location_code, f.ipc_phase,
-                SUM(f.population_fraction_in_phase) AS fraction, l.max_year AS year
+                SUM(f.population_fraction_in_phase) AS fraction,
+                CAST(LEFT(l.max_period, 4) AS INTEGER) AS year
          FROM read_parquet('${foodUrl}', hive_partitioning=false) f
          JOIN latest l ON f.location_code = l.location_code
-           AND CAST(LEFT(f.reference_period_start, 4) AS INTEGER) = l.max_year
+           AND f.reference_period_start = l.max_period
          WHERE f.ipc_type = 'current' AND f.ipc_phase IN ('1','2','3','4','5')
-         GROUP BY f.location_name, f.location_code, f.ipc_phase, l.max_year
+         GROUP BY f.location_name, f.location_code, f.ipc_phase, l.max_period
          ORDER BY f.location_name, f.ipc_phase`;
   const result = await conn.query(sql);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

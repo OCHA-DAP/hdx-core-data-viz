@@ -142,7 +142,6 @@
 <div class="avail-page" class:dark={theme === "dark"}>
   <header class="page-header">
     <div class="header-left">
-      <a href="/" class="back-link">← HDX Lens</a>
       <h1 class="page-title">Data Availability</h1>
     </div>
     <div class="header-right">
@@ -328,16 +327,6 @@
     display: flex;
     align-items: center;
     gap: 12px;
-  }
-
-  .back-link {
-    font-size: 13px;
-    color: var(--text-muted);
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .back-link:hover {
-    color: var(--text);
   }
 
   .page-title {

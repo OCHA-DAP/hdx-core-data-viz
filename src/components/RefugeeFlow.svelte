@@ -201,8 +201,6 @@
 
 <div class="wrapper">
   <nav class="topbar" class:dark={theme === "dark"}>
-    <a href="/" class="back-link">← Explorer</a>
-
     <div class="year-ctrl">
       <button class="step-btn" onclick={() => advanceYear(-1)} disabled={year <= 2001}>◀</button>
       <input
@@ -308,16 +306,6 @@
 
   .topbar.dark {
     border-bottom-color: rgba(255, 255, 255, 0.08);
-  }
-
-  .back-link {
-    color: var(--text-muted);
-    text-decoration: none;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .back-link:hover {
-    color: var(--text);
   }
 
   .year-ctrl {

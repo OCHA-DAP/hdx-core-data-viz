@@ -1,0 +1,196 @@
+---
+import Layout from "../layouts/Layout.astro";
+const base = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+---
+
+<Layout title="About — HDX Core Data">
+  <div class="page">
+    <div class="content">
+      <h1>HDX Core Data</h1>
+      <p class="lead">
+        An interactive explorer for humanitarian crisis data published by OCHA through the
+        <a href="https://hdx-hapi.readthedocs.io/en/latest/" target="_blank" rel="noopener">Humanitarian API (HAPI)</a>.
+        All data loads directly in your browser from cloud-native Parquet files — no account, no download, no server.
+      </p>
+
+      <h2>Visualizations</h2>
+
+      <div class="viz-grid">
+        <a class="viz-card" href={`${base}`}>
+          <h3>Explorer</h3>
+          <p>
+            A Gapminder-style bubble chart that plots countries and sub-national regions on any two
+            humanitarian indicators simultaneously. Each bubble represents a country or admin region;
+            size encodes a third variable. Step through years to watch crises evolve, or drill from
+            a country down to its provinces and districts.
+          </p>
+          <p class="axes-note">
+            Available axes: conflict fatalities, IPC food crisis (Phase 3+), poverty headcount,
+            multidimensional poverty (MPI), national risk score, humanitarian funding gap, people in
+            humanitarian need, refugees hosted, rainfall anomaly, IDP population, and total population.
+          </p>
+        </a>
+
+        <a class="viz-card" href={`${base}food-security`}>
+          <h3>Food Security</h3>
+          <p>
+            A ranked bar chart of IPC (Integrated Food Security Phase Classification) phase
+            distributions across all countries with data. Each bar shows what share of the assessed
+            population falls in each phase — from Phase 1 (Minimal) through Phase 5 (Famine).
+          </p>
+          <p>
+            Use the year slider to compare across seasons, and sort by Phase 5, Phase 4+, or Phase 3+
+            to surface the most acute crises.
+          </p>
+        </a>
+
+        <a class="viz-card" href={`${base}timeline`}>
+          <h3>Crisis Timeline</h3>
+          <p>
+            A country-level time series showing four crisis indicators in parallel panels: conflict
+            fatalities (ACLED), internally displaced persons, IPC Phase 3+ population share, and
+            humanitarian funding gap. Useful for understanding how different dimensions of a crisis
+            have evolved together over time.
+          </p>
+          <p>Filtered to countries with an active Humanitarian Response Plan (HRP) or in the Global Humanitarian Overview.</p>
+        </a>
+
+        <a class="viz-card" href={`${base}food-prices`}>
+          <h3>Food Prices</h3>
+          <p>
+            Tracks WFP food price series for a selected country and commodity category. Prices can
+            be shown as raw values or normalized to a baseline, making it easier to compare
+            volatility across markets and commodities.
+          </p>
+        </a>
+
+        <a class="viz-card" href={`${base}refugees`}>
+          <h3>Refugee Flows</h3>
+          <p>
+            A chord diagram mapping refugee and asylum seeker movements between origin and asylum
+            countries. The width of each arc is proportional to the number of people. Useful for
+            seeing which countries are major sources or hosts of forced displacement.
+          </p>
+        </a>
+
+        <a class="viz-card" href={`${base}availability`}>
+          <h3>Data Availability</h3>
+          <p>
+            A catalog of the underlying HAPI datasets, showing which countries have data for each
+            indicator. Use this to understand gaps in coverage before drawing conclusions from the
+            other views.
+          </p>
+        </a>
+      </div>
+
+      <h2>Data source</h2>
+      <p>
+        All datasets come from <a href="https://hdx-hapi.readthedocs.io/en/latest/" target="_blank" rel="noopener">OCHA HAPI</a>
+        and are hosted as Parquet files on <a href="https://source.coop" target="_blank" rel="noopener">Source Cooperative</a>.
+        The browser reads them directly using DuckDB-WASM — no data ever passes through a server.
+      </p>
+      <p>
+        Underlying sources include ACLED (conflict), IPC (food security), WFP (food prices),
+        UNHCR (refugees and IDPs), OCHA FTS (funding), and national statistics (population and poverty).
+      </p>
+
+      <h2>Design principle</h2>
+      <p>
+        Humanitarian data without context can mislead. Raw counts tell you a country has a large
+        number of displaced people; rates tell you whether that represents 2% or 40% of its
+        population. Wherever datasets provide pre-calculated rates or fractions, HDX Core Data uses
+        them. When showing counts, it contextualizes them against population.
+      </p>
+    </div>
+  </div>
+</Layout>
+
+<style>
+  .page {
+    height: 100%;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  .content {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 12px;
+    color: var(--text);
+  }
+
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 40px 0 14px;
+    color: var(--text);
+    border-bottom: 1px solid var(--text-sep);
+    padding-bottom: 6px;
+  }
+
+  p {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+  }
+
+  .lead {
+    font-size: 15px;
+    color: var(--text);
+  }
+
+  a {
+    color: #f46d43;
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .viz-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+    margin-top: 4px;
+  }
+
+  .viz-card {
+    display: block;
+    border: 1px solid var(--text-sep);
+    border-radius: 8px;
+    padding: 20px 22px;
+    text-decoration: none;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .viz-card:hover {
+    border-color: #f46d43;
+    background: var(--hover-bg);
+    text-decoration: none;
+  }
+
+  .viz-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 10px;
+  }
+
+  .viz-card p {
+    margin: 0 0 8px;
+  }
+  .viz-card p:last-child {
+    margin-bottom: 0;
+  }
+
+  .axes-note {
+    font-size: 12px;
+    color: var(--text-sep);
+  }
+</style>

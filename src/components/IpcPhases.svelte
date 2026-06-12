@@ -1,10 +1,13 @@
 <script lang="ts">
   import { fetchIpcPhases, type IpcPhaseRow } from "../lib/hapi.js";
 
-  type SortKey = "phase3plus" | "phase4plus" | "name";
-
-  let year = $state<number | null>(null); // null = latest per country
-  let sortBy = $state<SortKey>("phase3plus");
+  // slider goes 2017–2027; 2027 = "Latest per country" (year=null)
+  const YEAR_MIN = 2017;
+  const YEAR_LATEST = 2027; // sentinel value for the slider's rightmost tick
+  let sliderVal = $state(YEAR_LATEST);
+  const year = $derived(sliderVal === YEAR_LATEST ? null : sliderVal);
+  type SortKey = "p5" | "p4plus" | "p3plus";
+  let sortBy = $state<SortKey>("p5");
   let rows = $state<IpcPhaseRow[]>([]);
   let hasData = $state(false);
   let loading = $state(true);
@@ -60,15 +63,15 @@
       c.total = c.p1 + c.p2 + c.p3 + c.p4 + c.p5;
     }
     const list = [...byCode.values()];
-    if (sortBy === "phase3plus") return list.sort((a, b) => b.phase3plus - a.phase3plus);
-    if (sortBy === "phase4plus") return list.sort((a, b) => b.phase4plus - a.phase4plus);
-    return list.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "p5")
+      return list.sort((a, b) => b.p5 - a.p5 || b.p4 - a.p4 || b.p3 - a.p3 || b.p2 - a.p2 || b.p1 - a.p1);
+    if (sortBy === "p4plus")
+      return list.sort((a, b) => b.phase4plus - a.phase4plus || b.p5 - a.p5 || b.p3 - a.p3 || b.p2 - a.p2 || b.p1 - a.p1);
+    return list.sort((a, b) => b.phase3plus - a.phase3plus || b.phase4plus - a.phase4plus || b.p5 - a.p5 || b.p2 - a.p2 || b.p1 - a.p1);
   });
 
-  const YEARS = Array.from({ length: 10 }, (_, i) => 2017 + i);
-
-  const PHASE_COLORS = ["#c9e2bc", "#f2e671", "#eb943b", "#cb2a1e", "#5d0000"];
-  const PHASE_LABELS = ["Phase 1 – Minimal", "Phase 2 – Stressed", "Phase 3 – Crisis", "Phase 4 – Emergency", "Phase 5 – Famine"];
+  const PHASE_COLORS = ["#5d0000", "#cb2a1e", "#eb943b", "#f2e671", "#c9e2bc"];
+  const PHASE_LABELS = ["Phase 5 – Famine", "Phase 4 – Emergency", "Phase 3 – Crisis", "Phase 2 – Stressed", "Phase 1 – Minimal"];
 
   function pct(f: number): string { return (Math.min(1, f) * 100).toFixed(1) + "%"; }
 
@@ -88,22 +91,24 @@
 <div class="wrapper">
   <nav class="topbar" class:dark={theme === "dark"}>
     <div class="ctrl-group">
-      <label class="ctrl-label" for="year-sel">Year</label>
-      <select id="year-sel" bind:value={year}>
-        <option value={null}>Latest per country</option>
-        {#each YEARS as y}
-          <option value={y}>{y}</option>
-        {/each}
-      </select>
+      <span class="ctrl-label">Year</span>
+      <button class="step-btn" onclick={() => sliderVal = Math.max(YEAR_MIN, sliderVal - 1)} disabled={sliderVal <= YEAR_MIN}>◀</button>
+      <input
+        class="year-slider"
+        type="range" min={YEAR_MIN} max={YEAR_LATEST} step={1}
+        bind:value={sliderVal}
+      />
+      <button class="step-btn" onclick={() => sliderVal = Math.min(YEAR_LATEST, sliderVal + 1)} disabled={sliderVal >= YEAR_LATEST}>▶</button>
+      <span class="year-display">{sliderVal === YEAR_LATEST ? "Latest" : sliderVal}</span>
     </div>
 
     <div class="ctrl-group">
-      <label class="ctrl-label" for="sort-sel">Sort by</label>
-      <select id="sort-sel" bind:value={sortBy}>
-        <option value="phase3plus">% in Phase 3+ (crisis or worse)</option>
-        <option value="phase4plus">% in Phase 4+ (emergency or famine)</option>
-        <option value="name">Country name</option>
-      </select>
+      <span class="ctrl-label">Sort</span>
+      <div class="seg-group">
+        <button class="seg-opt" class:active={sortBy === "p5"}     onclick={() => sortBy = "p5"}>5</button>
+        <button class="seg-opt" class:active={sortBy === "p4plus"} onclick={() => sortBy = "p4plus"}>4+</button>
+        <button class="seg-opt" class:active={sortBy === "p3plus"} onclick={() => sortBy = "p3plus"}>3+</button>
+      </div>
     </div>
 
     {#if hasData}
@@ -144,24 +149,28 @@
             <div class="row" title={rowTitle(c)}>
               <span class="cname">{c.name}</span>
               <div class="bar">
-                {#if c.p1 > 0.002}
-                  <div class="seg" style="width:{Math.min(100,(c.p1*100)).toFixed(2)}%; background:#c9e2bc"></div>
-                {/if}
-                {#if c.p2 > 0.002}
-                  <div class="seg" style="width:{Math.min(100,(c.p2*100)).toFixed(2)}%; background:#f2e671"></div>
-                {/if}
-                {#if c.p3 > 0.002}
-                  <div class="seg" style="width:{Math.min(100,(c.p3*100)).toFixed(2)}%; background:#eb943b"></div>
+                {#if c.p5 > 0.002}
+                  <div class="seg" style="width:{Math.min(100,(c.p5*100)).toFixed(2)}%; background:#5d0000"></div>
                 {/if}
                 {#if c.p4 > 0.002}
                   <div class="seg" style="width:{Math.min(100,(c.p4*100)).toFixed(2)}%; background:#cb2a1e"></div>
                 {/if}
-                {#if c.p5 > 0.002}
-                  <div class="seg" style="width:{Math.min(100,(c.p5*100)).toFixed(2)}%; background:#5d0000"></div>
+                {#if c.p3 > 0.002}
+                  <div class="seg" style="width:{Math.min(100,(c.p3*100)).toFixed(2)}%; background:#eb943b"></div>
+                {/if}
+                {#if c.p2 > 0.002}
+                  <div class="seg" style="width:{Math.min(100,(c.p2*100)).toFixed(2)}%; background:#f2e671"></div>
+                {/if}
+                {#if c.p1 > 0.002}
+                  <div class="seg" style="width:{Math.min(100,(c.p1*100)).toFixed(2)}%; background:#c9e2bc"></div>
                 {/if}
               </div>
-              <span class="pct-label" class:high={c.phase3plus > 0.3} class:critical={c.phase3plus > 0.5}>
-                {pct(c.phase3plus)}
+              <span
+                class="pct-label"
+                class:high={(sortBy === "p5" ? c.p5 : sortBy === "p4plus" ? c.phase4plus : c.phase3plus) > 0.1}
+                class:critical={(sortBy === "p5" ? c.p5 : sortBy === "p4plus" ? c.phase4plus : c.phase3plus) > 0.25}
+              >
+                {sortBy === "p5" ? pct(c.p5) : sortBy === "p4plus" ? pct(c.phase4plus) : pct(c.phase3plus)}
               </span>
               {#if c.year !== year}
                 <span class="year-tag">{c.year}</span>
@@ -200,6 +209,25 @@
 
   .ctrl-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .ctrl-label { color: var(--text-muted); white-space: nowrap; }
+
+  .seg-group { display: flex; border: 1px solid rgba(0,0,0,0.15); border-radius: 4px; overflow: hidden; }
+  .seg-opt {
+    background: none; border: none; border-left: 1px solid rgba(0,0,0,0.15);
+    padding: 2px 8px; font-size: 11px; cursor: pointer; color: var(--text-muted);
+    transition: background 0.1s, color 0.1s;
+  }
+  .seg-opt:first-child { border-left: none; }
+  .seg-opt:hover { background: var(--hover-bg); }
+  .seg-opt.active { background: #f46d43; color: white; }
+
+  .year-slider { width: 120px; cursor: pointer; accent-color: #f46d43; }
+  .year-display { font-size: 12px; font-weight: 600; min-width: 36px; color: var(--text); }
+  .step-btn {
+    background: none; border: 1px solid rgba(0,0,0,0.15); border-radius: 3px;
+    padding: 2px 6px; font-size: 11px; cursor: pointer; color: var(--text-muted);
+  }
+  .step-btn:disabled { opacity: 0.3; cursor: default; }
+  .step-btn:not(:disabled):hover { background: var(--hover-bg); }
 
   .ctrl-group select {
     font-size: 12px;
@@ -284,12 +312,19 @@
   .dark .toggle-thumb { transform: translateX(16px); }
   .toggle-label { min-width: 28px; }
 
-  .chart-area { flex: 1; min-height: 0; position: relative; }
+  .chart-area {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
 
   .bars-scroll {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 12px 20px 32px;
+    padding: 12px 20px 12px;
   }
 
   .bars { display: flex; flex-direction: column; gap: 3px; }
@@ -376,13 +411,13 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .hint {
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
+    flex-shrink: 0;
+    text-align: center;
     font-size: 11px;
     color: var(--text-sep);
     pointer-events: none;
     white-space: nowrap;
+    padding: 6px 0 8px;
+    margin: 0;
   }
 </style>
