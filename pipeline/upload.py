@@ -38,6 +38,19 @@ def sync_output(output_dir: str = OUTPUT_DIR) -> None:
     AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_SESSION_TOKEN.
     Set SOURCE_COOP_PREFIX to "<org>/<product>" before calling.
     """
+    if not SOURCE_COOP_BUCKET or not SOURCE_COOP_PREFIX:
+        msg = 'SOURCE_COOP_PREFIX must be "<org>/<product>", e.g. hdx/hapi'
+        raise ValueError(msg)
+
+    local: dict[str, Path] = {
+        str(p.relative_to(output_dir)): p
+        for p in Path(output_dir).rglob("*")
+        if p.is_file() and not p.name.startswith(".")
+    }
+    if "collection.json" not in local:
+        msg = f"No collection.json in {Path(output_dir).resolve()}; refusing to sync"
+        raise RuntimeError(msg)
+
     store = S3Store(
         bucket=SOURCE_COOP_BUCKET,
         prefix=SOURCE_COOP_PREFIX,
@@ -49,16 +62,6 @@ def sync_output(output_dir: str = OUTPUT_DIR) -> None:
         for page in obs.list(store)
         for item in page
     }
-
-    local: dict[str, Path] = {
-        str(p.relative_to(output_dir)): p
-        for p in Path(output_dir).rglob("*")
-        if p.is_file() and not p.name.startswith(".")
-    }
-
-    for key in sorted(set(remote) - set(local)):
-        obs.delete(store, key)
-        logger.info("Deleted  %s", key)
 
     uploaded = skipped = 0
     for key, path in sorted(local.items()):
@@ -74,5 +77,9 @@ def sync_output(output_dir: str = OUTPUT_DIR) -> None:
         obs.put(store, key, path.read_bytes())
         uploaded += 1
         logger.info("Uploaded %s", key)
+
+    for key in sorted(set(remote) - set(local)):
+        obs.delete(store, key)
+        logger.info("Deleted  %s", key)
 
     logger.info("Sync complete: %d uploaded, %d skipped unchanged.", uploaded, skipped)
