@@ -1,6 +1,6 @@
 """Migrate existing Parquet outputs to current layout and rebuild STAC.
 
-Run with:  uv run -m app.migrate
+Run with:  uv run -m pipeline.migrate
 """
 
 import logging
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def migrate() -> None:
-    """Re-layout output/ in-place and rebuild the STAC catalog."""
+    """Re-layout catalog/ in-place and rebuild the STAC catalog."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     output_dir = Path(config.OUTPUT_DIR)
     results = []

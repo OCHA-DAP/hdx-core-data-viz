@@ -21,3 +21,11 @@ npm-debug.log*
 Thumbs.db
 
 .playwright-cli
+
+# python
+__pycache__/
+*.py[oc]
+.venv/
+.ruff_cache/
+/catalog/
+/tmp/

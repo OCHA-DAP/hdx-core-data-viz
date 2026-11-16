@@ -15,7 +15,7 @@ APP_IDENTIFIER = base64.b64encode(f"{APP_NAME}:{EMAIL}".encode()).decode()
 
 BASE_URL = "https://hapi.humdata.org/api/v2"
 OPENAPI_URL = "https://hapi.humdata.org/openapi.json"
-OUTPUT_DIR = "output"
+OUTPUT_DIR = "catalog"
 
 SOURCE_COOP_BUCKET = "us-west-2.opendata.source.coop"
 SOURCE_COOP_REGION = "us-west-2"

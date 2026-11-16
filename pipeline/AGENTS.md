@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                  # install deps
-uv run -m app            # run ETL pipeline
+uv run -m pipeline       # run ETL pipeline
 uv run ruff check .      # lint (auto-fix enabled)
 uv run ruff format .     # format
 ```
@@ -19,7 +19,7 @@ Four-module ETL: `config.ENDPOINTS → extract.fetch_endpoint() → load.write_p
 
 - **config.py** — all constants and the endpoint registry. Add new datasets here.
 - **extract.py** — paginates HAPI via `offset`/`limit` until a short page, returns `list[dict]`.
-- **load.py** — writes ZSTD-15 Parquet to `output/<theme>/<name>.parquet`; extracts temporal range for catalog.
+- **load.py** — writes ZSTD-15 Parquet to `catalog/<theme>/<name>.parquet`; extracts temporal range for catalog.
 - **index.py** — writes `output/index.parquet` with one row per endpoint (schema, row count, temporal range).
 
 ## Notes
