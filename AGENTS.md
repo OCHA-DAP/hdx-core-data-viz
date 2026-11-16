@@ -6,7 +6,7 @@ A browser-based explorer for HAPI (Humanitarian API) data — humanitarian datas
 
 ## Data source
 
-All data comes from **cloud-native Parquet files hosted on Source Cooperative**, read directly in the browser using **DuckDB-WASM**. No backend server.
+All data comes from **cloud-native Parquet files hosted on Source Cooperative**, read directly in the browser using **DuckDB-WASM**. No backend server. The Python pipeline in `pipeline/` builds and uploads those files (see Data pipeline below).
 
 - **HAPI docs**: <https://hdx-hapi.readthedocs.io/en/latest/>
 - **Local STAC metadata**: `src/data/hapi/` — mirrors the Source Cooperative folder structure; run `npm run sync-stac` to refresh
@@ -51,6 +51,36 @@ All partitioned datasets share the same location columns:
 - **@duckdb/duckdb-wasm** — Parquet reader and SQL engine that works in the browser
 - **Vega / Vega-Lite / vega-embed** — charting (installed, not yet used)
 - **TypeScript** — strict mode
+
+## Data pipeline
+
+Python 3.13 + uv ETL in `pipeline/` that pulls every HAPI v2 endpoint, writes Parquet and a STAC catalog to `catalog/` (gitignored), and syncs it to Source Cooperative. `pyproject.toml`, `uv.lock` and `.env` (copy `.env.example`) live at the repo root; run everything from there:
+
+```bash
+uv sync                          # install deps
+uv run -m pipeline               # fetch all endpoints, rebuild catalog/, upload if SOURCE_COOP_UPLOAD is set
+uv run -m pipeline.migrate       # re-layout existing catalog/ Parquet and rebuild STAC, no fetching
+uv run ruff check .              # lint (auto-fix enabled)
+uv run ruff format .             # format
+```
+
+No tests yet.
+
+Flow: `extract.discover_endpoints() → extract.fetch_endpoint() → load.write_parquet() → stac.build_collection() → upload.sync_output()`
+
+- **config.py**: constants and env settings (`OUTPUT_DIR`, HAPI URLs, Source Cooperative bucket/prefix).
+- **extract.py**: discovers data endpoints and their Arrow schemas from the HAPI OpenAPI spec; pages through each with `offset`/`limit`, retrying network errors, 429 and 5xx.
+- **load.py**: writes ZSTD Parquet to `catalog/<theme>/`, Hive-partitioned by `admin_level` where the dataset has one, else a single `<name>.parquet`; returns the temporal range.
+- **stac.py**: writes the root `collection.json`, per-theme child collections and one Item JSON per endpoint.
+- **upload.py**: syncs `catalog/` to Source Cooperative, skipping files whose size and MD5 match.
+- **migrate.py**: rebuilds the layout and STAC from Parquet already in `catalog/`.
+
+Notes:
+
+- `sync_output` deletes remote files missing from `catalog/`. Only run it against a complete catalog; set `SOURCE_COOP_UPLOAD=` (empty) in `.env` for local runs.
+- `SOURCE_COOP_PREFIX` is `<org>/<product>` (`hdx/hapi`); the org is the S3 bucket.
+- Ruff runs with `lint.select = ["ALL"]`; docstrings are required on all public symbols.
+- `APP_IDENTIFIER` in config.py is a base64 `app_name:email` tracking token (not auth), built from `EMAIL`/`APP_NAME` in `.env`.
 
 ## Testing / running the UI
 
