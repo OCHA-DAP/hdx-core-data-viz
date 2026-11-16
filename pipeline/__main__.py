@@ -18,7 +18,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     results = []
-    with httpx.Client(http2=True, timeout=30) as client:
+    with httpx.Client(http2=True, timeout=httpx.Timeout(120, connect=15)) as client:
         for endpoint in discover_endpoints(client):
             logger.info("\n→ %s", endpoint["id"])
             pages = fetch_endpoint(client, endpoint["id"])

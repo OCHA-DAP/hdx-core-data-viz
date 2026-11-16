@@ -18,28 +18,32 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
-def _is_rate_limited(exc: BaseException) -> bool:
-    return (
-        isinstance(exc, httpx.HTTPStatusError)
-        and exc.response.status_code == httpx.codes.TOO_MANY_REQUESTS
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and (
+        exc.response.status_code == httpx.codes.TOO_MANY_REQUESTS
+        or exc.response.is_server_error
     )
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
     logger.warning(
-        "  429 rate limit; retrying (attempt %d)", retry_state.attempt_number
+        "  %r; retrying (attempt %d)",
+        retry_state.outcome.exception(),
+        retry_state.attempt_number,
     )
 
 
 @retry(
-    retry=retry_if_exception(_is_rate_limited),
+    retry=retry_if_exception(_is_retryable),
     wait=wait_exponential(multiplier=2, min=2, max=60),
     stop=stop_after_attempt(10),
     before_sleep=_log_retry,
     reraise=True,
 )
 def _get_page(client: httpx.Client, url: str, offset: int) -> httpx.Response:
-    """GET a single page, raising on any non-2xx including 429."""
+    """GET a single page, retrying timeouts, network errors, 429 and 5xx."""
     resp = client.get(
         url,
         params={
