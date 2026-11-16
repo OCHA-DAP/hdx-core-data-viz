@@ -58,7 +58,7 @@ Python 3.13 + uv ETL in `pipeline/` that pulls every HAPI v2 endpoint, writes Pa
 
 ```bash
 uv sync                          # install deps
-uv run -m pipeline               # fetch all endpoints, rebuild catalog/, upload if SOURCE_COOP_UPLOAD is set
+uv run -m pipeline               # fetch all endpoints, write catalog/, upload if SOURCE_COOP_UPLOAD is set
 uv run -m pipeline.migrate       # re-layout existing catalog/ Parquet and rebuild STAC, no fetching
 uv run ruff check .              # lint (auto-fix enabled)
 uv run ruff format .             # format
@@ -77,8 +77,9 @@ Flow: `extract.discover_endpoints() → extract.fetch_endpoint() → load.write_
 
 Notes:
 
-- `sync_output` deletes remote files missing from `catalog/`. Only run it against a complete catalog; set `SOURCE_COOP_UPLOAD=` (empty) in `.env` for local runs.
-- `SOURCE_COOP_PREFIX` is `<org>/<product>` (`hdx/hapi`); the org is the S3 bucket.
+- `sync_output` uploads, then deletes remote files missing from `catalog/`. It refuses to run without `catalog/collection.json`, but a partial catalog still deletes remote data; set `SOURCE_COOP_UPLOAD=` (empty) in `.env` for local runs.
+- `catalog/` is not cleared between runs, so files for endpoints dropped upstream stay local and on the remote.
+- `SOURCE_COOP_PREFIX` is `<org>/<product>` (`hdx/hapi`); the org is the S3 bucket, and `AWS_ENDPOINT_URL=https://data.source.coop` must be set.
 - Ruff runs with `lint.select = ["ALL"]`; docstrings are required on all public symbols.
 - `APP_IDENTIFIER` in config.py is a base64 `app_name:email` tracking token (not auth), built from `EMAIL`/`APP_NAME` in `.env`.
 
